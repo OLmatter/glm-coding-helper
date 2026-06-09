@@ -40,5 +40,10 @@ Thumbs.db
 *.env
 secrets.*
 config.local.*
+config.json
 *token*.txt
 新建文本文档*.txt
+server_err.txt
+server_out.txt
+server.pid
+test_captcha.png

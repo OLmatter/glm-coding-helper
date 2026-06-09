@@ -54,7 +54,7 @@ if ($InstallTarget -eq "gpu") {
 }
 
 if (-not $Ready) {
-    Write-Host "Backend environment is missing or incomplete. Installing $InstallTarget environment..."
+    Write-Host "Backend environment is missing or incomplete (PIL/cv2/numpy etc). Installing $InstallTarget environment..."
     $argsList = @("-Target", $InstallTarget)
     if ($SelectedPython -and (Test-Path $SelectedPython)) {
         Write-Host "Existing backend environment failed import checks. Recreating it..."
@@ -65,6 +65,19 @@ if (-not $Ready) {
         $argsList += $arg
     }
     & powershell -NoProfile -ExecutionPolicy Bypass -File "scripts\bootstrap_windows.ps1" @argsList
+
+    # 修复后重新验证
+    if ($InstallTarget -eq "gpu") {
+        $Ready = Test-PythonImports $GpuPython $ImportCode
+    } else {
+        $Ready = Test-PythonImports $CpuPython $ImportCode
+    }
+    if (-not $Ready) {
+        Write-Host "[FAIL] Backend environment repair failed. Required deps still missing." -ForegroundColor Red
+        Write-Host "       Try running install-env.cmd manually." -ForegroundColor Red
+        Read-Host "Press Enter to exit"
+        exit 1
+    }
 }
 
 if ($Target -eq "auto" -and $InstallTarget -eq "gpu" -and -not (Test-PythonImports $CpuPython $ImportCode)) {
@@ -75,6 +88,12 @@ if ($Target -eq "auto" -and $InstallTarget -eq "gpu" -and -not (Test-PythonImpor
         $fallbackArgs += $arg
     }
     & powershell -NoProfile -ExecutionPolicy Bypass -File "scripts\bootstrap_windows.ps1" @fallbackArgs
+}
+
+# ── 检查 pipeline 后端依赖（非阻塞，仅提示）─────────────────
+$PipelineDepsOk = Test-PythonImports $SelectedPython "import fastapi, uvicorn, psutil"
+if (-not $PipelineDepsOk) {
+    Write-Host "[INFO] Pipeline backend deps (fastapi/uvicorn/psutil) not installed. Run install-env.cmd to add them." -ForegroundColor Yellow
 }
 
 Write-Host "Starting backend in $StartMode mode on port $Port..."

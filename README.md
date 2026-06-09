@@ -183,6 +183,20 @@ https://www.bigmodel.cn/glm-coding
 
 验证码图片不会上传到第三方识别服务。
 
+### 并发流水线架构（Lite 版）
+
+`backend/` 目录提供了一种可选的并发流水线后端，通过多进程流水线提升 CPU 多核利用率：
+
+- **YOLO → OCR 两段流水线**：YOLO worker 检测字符位置、裁切 → OCR worker 识别单个文字
+- **按 CPU 核数自动分配 YOLO/OCR worker**（可通过 `config.json` 手动调整）
+- 每个 worker 绑定独立物理核心，消除 GIL 争抢
+- 队列传递裁剪结果，零序列化开销
+
+启动：
+```powershell
+python backend/server.py
+```
+
 ## 常用文件
 
 | 文件 | 用途 |

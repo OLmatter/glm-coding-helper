@@ -15,3 +15,6 @@ pyautogui
 pydirectinput
 mss
 websocket-client
+fastapi
+uvicorn[standard]
+psutil

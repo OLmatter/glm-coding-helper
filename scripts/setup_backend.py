@@ -64,9 +64,13 @@ def smoke_test(py: Path, mode: str) -> None:
     code = (
         "import PIL, cv2, numpy, ultralytics; "
         "from paddleocr import TextRecognition; "
-        "print('imports ok')"
+        "print('core imports ok')"
     )
     run([str(py), "-c", code])
+    extra_code = (
+        "import fastapi, uvicorn, psutil; print('backend deps ok')"
+    )
+    run([str(py), "-c", extra_code])
     if mode == "gpu":
         gpu_code = (
             "import paddle; "
