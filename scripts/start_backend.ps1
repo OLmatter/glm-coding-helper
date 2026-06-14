@@ -37,7 +37,7 @@ function Test-BackendMainPython {
     if (-not $PythonPath) { return $false }
     if ($PythonPath -ne "python" -and -not (Test-Path $PythonPath)) { return $false }
     try {
-        & $PythonPath -c "import ultralytics, PIL, cv2, numpy" *> $null
+        & $PythonPath -c "import ultralytics, PIL, cv2, numpy; from paddleocr import TextRecognition" *> $null
         return $LASTEXITCODE -eq 0
     } catch {
         return $false

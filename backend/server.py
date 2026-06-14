@@ -135,15 +135,12 @@ async def lifespan(app: FastAPI):
             time.sleep(1.0)  # OCR 模型大，间隔 1s 避免内存尖峰
 
     def _worker_watchdog():
-        """监控 worker 进程，崩溃后自动重启（仅 OCR，内存不足时重试）"""
+        """监控 worker 进程，崩溃后自动重启"""
         time.sleep(30)
         while not _shutdown.is_set():
             _shutdown.wait(15)
             if _shutdown.is_set():
                 break
-            with ready_count_lock:
-                if ready_count >= N_YOLO + N_OCR:
-                    continue
             for idx, p in enumerate(workers_list):
                 if not p.is_alive():
                     core_id = N_YOLO + (idx - N_YOLO) if idx >= N_YOLO else idx
@@ -222,9 +219,10 @@ app.add_middleware(
 async def health():
     with ready_count_lock:
         r = ready_count
+    alive = sum(1 for p in workers_list if p.is_alive()) if workers_list else 0
     total = N_YOLO + N_OCR
     status = "ok" if r >= total else "starting"
-    return {"status": status, "workers": total, "ready_workers": r}
+    return {"status": status, "workers": total, "ready_workers": r, "alive_workers": alive}
 
 
 @app.post("/direct")
@@ -260,6 +258,8 @@ async def handle_direct(data: CaptchaRequest):
         result = await asyncio.wait_for(future, timeout=15.0)
         return {"success": True, "result": result}
     except asyncio.TimeoutError:
+        with request_lock:
+            pending_requests.pop(req_id, None)
         raise HTTPException(status_code=504, detail="Processing timeout")
 
 
@@ -304,6 +304,8 @@ async def handle_direct_url(data: CaptchaUrlRequest):
         result = await asyncio.wait_for(future, timeout=15.0)
         return {"success": True, "result": result}
     except asyncio.TimeoutError:
+        with request_lock:
+            pending_requests.pop(req_id, None)
         raise HTTPException(status_code=504, detail="Processing timeout")
 
 
