@@ -19,7 +19,9 @@
 // @grant        GM_xmlhttpRequest
 // @connect      localhost
 // @connect      localhost:8888
+// @connect      localhost
 // @connect      127.0.0.1:8888
+// @connect      127.0.0.1
 // @connect      gtimg.com
 // @connect      *.gtimg.com
 // @connect      captcha.qcloud.com
@@ -508,6 +510,10 @@
         AUTO_CLICK_SUB    : true,
         AUTO_CAPTCHA_CLICK : true,
         AUTO_CAPTCHA_CONFIRM: false,
+        RUSH_ENABLED        : false,
+        RUSH_TARGET_HOUR    : 9,
+        RUSH_TARGET_MIN     : 59,
+        RUSH_TARGET_SEC     : 58,
     };
     function loadCfg() { try { const s = GM_getValue(STORAGE_KEY, null); return s ? { ...DEF, ...JSON.parse(s) } : { ...DEF }; } catch { return { ...DEF }; } }
     function saveCfg(c) { GM_setValue(STORAGE_KEY, JSON.stringify(c)); }
@@ -622,7 +628,7 @@
         return time >= start && time <= end;
     }
     // ── DOM 访问 ──────────────────────────────────────────────────────────────
-    const tabEl     = n => document.querySelectorAll('#switchTabBox .switch-tab-item')[n];
+    const tabEl     = n => document.querySelectorAll('#switchTabBox .switch-tab-item')[n - 1];
     const btnEl     = n => document.querySelector(`.glm-coding-package-list > div:nth-child(${n}) > div > .package-card-btn-box > button`);
     const canBuy    = b => b && !b.disabled && !b.classList.contains('is-disabled') && !b.classList.contains('disabled') && !/售罄|补货|暂时/.test(b.innerText || '');
     const isSoldOut = b => /售罄|补货|暂时/.test(b?.innerText || '');
@@ -695,8 +701,13 @@
     function checkPayDialog() {
         const dlg = getPayDialog();
         if (!dlg) return 'keep';
-        // 绝对安全锁：本次会话中只要成功过一次，永不关闭
-        if (everSucceeded) return 'keep';
+        // 抢购模式锁定：抢购确认后永不自动关闭支付弹窗
+        if (window.__glmRushConfirmed) {
+            window.__glmRushDialogSeen = 1;
+            return 'keep';
+        }
+        // 绝对安全锁：成功过且当前 bizId 有效才不关
+        if (everSucceeded && PS.bizId) return 'keep';
         // 接口还没返回
         if (PS.inProgress) return 'keep';
         // ── 情况 A：接口 555 系统繁忙 → 关弹窗试下一个
@@ -851,6 +862,19 @@
                     <span title="默认关闭。开启后点完验证码文字会自动点确定；关闭后需要你手动点确定。" style="margin-left:6px;cursor:help;color:#999;font-size:14px;border:1px solid #ccc;border-radius:50%;width:18px;height:18px;display:inline-flex;align-items:center;justify-content:center;line-height:1">?</span>
                 </label>
             </div>
+            <div style="border-top:1px dashed #eee;padding-top:12px;margin-top:4px"></div>
+            <label style="display:flex;align-items:center;cursor:pointer">
+                <input type="checkbox" id="glm-re" ${CFG.RUSH_ENABLED ? 'checked' : ''} style="margin-right:8px">
+                <span style="font-size:14px;color:#555">启用抢购模式（验证码卡点确认）</span>
+            </label>
+            <div style="display:flex;align-items:center;gap:6px;margin-top:4px;padding-left:26px">
+                <span style="font-size:13px;color:#888">目标时间：</span>
+                <input type="number" id="glm-rh" value="${CFG.RUSH_TARGET_HOUR}" min="0" max="23" style="width:52px;padding:3px 6px;border:1px solid #d9d9d9;border-radius:4px;font-size:13px;text-align:center">
+                <span style="font-size:14px;color:#888">:</span>
+                <input type="number" id="glm-rm" value="${CFG.RUSH_TARGET_MIN}" min="0" max="59" style="width:52px;padding:3px 6px;border:1px solid #d9d9d9;border-radius:4px;font-size:13px;text-align:center">
+                <span style="font-size:14px;color:#888">:</span>
+                <input type="number" id="glm-rs" value="${CFG.RUSH_TARGET_SEC}" min="0" max="59" style="width:52px;padding:3px 6px;border:1px solid #d9d9d9;border-radius:4px;font-size:13px;text-align:center">
+            </div>
             <div style="display:flex;justify-content:space-between;gap:10px">
                 <button id="glm-multi" style="padding:8px 16px;border:1px solid #52c41a;background:#f6ffed;color:#52c41a;border-radius:6px;cursor:pointer;font-weight:600">🚀 一键多开</button>
                 <div style="display:flex;gap:10px">
@@ -876,6 +900,10 @@
                 AUTO_CLICK_SUB    : panel.querySelector('#glm-acs').checked,
                 AUTO_CAPTCHA_CLICK: panel.querySelector('#glm-acc').checked,
                 AUTO_CAPTCHA_CONFIRM: panel.querySelector('#glm-acf').checked,
+                RUSH_ENABLED: panel.querySelector('#glm-re').checked,
+                RUSH_TARGET_HOUR: parseInt(panel.querySelector('#glm-rh').value, 10),
+                RUSH_TARGET_MIN: parseInt(panel.querySelector('#glm-rm').value, 10),
+                RUSH_TARGET_SEC: parseInt(panel.querySelector('#glm-rs').value, 10),
                 SAFE_DEFAULTS_VERSION,
             });
             ov.remove(); alert('已保存，即将刷新。'); location.reload();
@@ -887,6 +915,10 @@
     // ═══════════════════════════════════════════════════════════════════════════
     function tick() {
         if (state === 'DONE') return;
+        if (window.__glmRushConfirmed && window.__glmRushDialogSeen && !getPayDialog()) {
+            window.__glmRushConfirmed = 0; window.__glmRushDialogSeen = 0;
+            console.log('[GLM] rush lock cleared');
+        }
         if (ensureDiscountEntry()) return;
         if (state === 'SLEEPING') {
             const rem = sleepUntil - Date.now();
@@ -1070,9 +1102,9 @@
                     return;
                 }
                 const prices = readDialogPrices();
-                if (everSucceeded || prices?.any) {
+                if (everSucceeded && PS.bizId || prices?.any) {
                     state = 'DONE';
-                    if (everSucceeded) showPayAlarm();
+                    if (everSucceeded && PS.bizId) showPayAlarm();
                     setBar('💳 <b>支付弹窗已出现！请立即扫码支付！</b> 脚本已停止。', '#16a34a');
                 } else {
                     setBar(`🔄 ${TABS_MAP[tab]}·${PKGS_MAP[pkg]} 弹窗等待确认...`, '#1677ff');
@@ -1149,15 +1181,24 @@
     'use strict';
     if (window.__glmCaptchaPromptBridge === 1) return;
     window.__glmCaptchaPromptBridge = 1;
-    const RUSH_CONFIG = {
-        enabled: true,
-        targetHour: 10,
-        targetMin: 0,
-        targetSec: 0,
-        staggerMs: 2000,
-        pollInterval: 50,
-        pollTimeout: 20000,
-    };
+    const RUSH_CFG = (() => {
+        try {
+            const raw = GM_getValue('glm_coding_config_v5', '{}');
+            const cfg = JSON.parse(raw || '{}');
+            const ph = parseInt(cfg.RUSH_TARGET_HOUR, 10); const pm = parseInt(cfg.RUSH_TARGET_MIN, 10); const ps = parseInt(cfg.RUSH_TARGET_SEC, 10);
+            return {
+                enabled: cfg.RUSH_ENABLED === true,
+                targetHour: Number.isFinite(ph) ? ph : 9,
+                targetMin: Number.isFinite(pm) ? pm : 59,
+                targetSec: Number.isFinite(ps) ? ps : 58,
+                staggerMs: 2000,
+                pollInterval: 50,
+                pollTimeout: 20000,
+            };
+        } catch {
+            return { enabled: false, targetHour: 9, targetMin: 59, targetSec: 58, staggerMs: 2000, pollInterval: 50, pollTimeout: 20000 };
+        }
+    })();
     const CAPTCHA_CFG = (() => {
         try {
             const raw = GM_getValue('glm_coding_config_v5', '{}');
@@ -1173,8 +1214,8 @@
     function getTargetTimestamp() {
         const now = new Date();
         const target = new Date(now.getFullYear(), now.getMonth(), now.getDate(),
-            RUSH_CONFIG.targetHour, RUSH_CONFIG.targetMin, RUSH_CONFIG.targetSec, 0);
-        const offset = getWindowIndex() * RUSH_CONFIG.staggerMs;
+            RUSH_CFG.targetHour, RUSH_CFG.targetMin, RUSH_CFG.targetSec, 0);
+        const offset = getWindowIndex() * RUSH_CFG.staggerMs;
         return target.getTime() + offset;
     }
     let lastCaptchaText = '';
@@ -1213,14 +1254,14 @@
         return new Promise((resolve, reject) => {
             const start = Date.now();
             function poll() {
-                if (Date.now() - start > RUSH_CONFIG.pollTimeout) {
+                if (Date.now() - start > RUSH_CFG.pollTimeout) {
                     reject(new Error('poll timeout'));
                     return;
                 }
                 serverRequest('POST', '/result', { ts: ts }).then(d => {
                     if (d.has_result) resolve(d.result);
-                    else setTimeout(poll, RUSH_CONFIG.pollInterval);
-                }).catch(() => setTimeout(poll, RUSH_CONFIG.pollInterval));
+                    else setTimeout(poll, RUSH_CFG.pollInterval);
+                }).catch(() => setTimeout(poll, RUSH_CFG.pollInterval));
             }
             poll();
         });
@@ -1243,8 +1284,6 @@
         var selectors = [
             '.tencent-captcha-dy__btn-confirm',
             '.tencent-captcha-dy__footer .btn',
-            '.pay-dialog button.el-button--primary',
-            '.el-dialog__wrapper:not([style*="display: none"]) .el-button--primary',
             '[class*="captcha"] [class*="confirm"]',
             '[class*="captcha"] [class*="submit"]',
         ];
@@ -1732,7 +1771,20 @@
                 await new Promise(function(r) { setTimeout(r, 220); });
             }
             await new Promise(function(r) { setTimeout(r, 350); });
-            if (CAPTCHA_CFG.AUTO_CAPTCHA_CONFIRM) {
+            rushState = 'idle';
+            if (RUSH_CFG.enabled) {
+                var targetTs = getTargetTimestamp();
+                if (Date.now() < targetTs) {
+                    console.log('[captcha-rush] waiting ' + ((targetTs - Date.now())/1000).toFixed(1) + 's until target...');
+                    await waitForTargetTime();
+                    console.log('[captcha-rush] target time reached, confirming...');
+                    var clicked = findAndClickConfirm();
+                    if (clicked) { window.__glmRushConfirmed = Date.now(); }
+                } else {
+                    var clicked = findAndClickConfirm();
+                    if (clicked) { window.__glmRushConfirmed = Date.now(); }
+                }
+            } else if (CAPTCHA_CFG.AUTO_CAPTCHA_CONFIRM) {
                 findAndClickConfirm();
             } else {
                 console.log('[captcha-direct-page] captcha confirm is disabled; waiting for manual confirm');
@@ -1763,7 +1815,7 @@
             console.log('[captcha] page direct solver:', payloadText);
             handleCaptchaDirectInPage(found.chars).catch(function(e) { console.error('[captcha-direct-page] unhandled:', e); });
             return;
-            if (RUSH_CONFIG.enabled) {
+            if (RUSH_CFG.enabled) {
                 handleCaptchaRush(found.chars).catch(function(e) { console.error('[captcha-rush] unhandled:', e); });
             } else {
                 serverRequest('POST', '/captcha', { text: payloadText, ts: Date.now() })
@@ -1773,5 +1825,5 @@
         }
     }
     setInterval(checkCaptchaPrompt, 50);
-    console.log('[captcha] bridge v2 started | rush=' + RUSH_CONFIG.enabled + ' | wi=' + getWindowIndex() + ' | target=10:' + String(RUSH_CONFIG.targetSec).padStart(2,'0') + '+' + (getWindowIndex() * RUSH_CONFIG.staggerMs / 1000) + 's');
+    console.log('[captcha] bridge v2 started | rush=' + RUSH_CFG.enabled + ' | wi=' + getWindowIndex() + ' | target=10:' + String(RUSH_CFG.targetSec).padStart(2,'0') + '+' + (getWindowIndex() * RUSH_CFG.staggerMs / 1000) + 's');
 })();
