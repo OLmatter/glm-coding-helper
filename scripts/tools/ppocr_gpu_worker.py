@@ -1,11 +1,22 @@
 from __future__ import annotations
 
+import importlib.util
 import json
 import math
 import os
 import site
 import sys
 from pathlib import Path
+
+# Patch find_spec to hide torch from modelscope (paddleocr dependency).
+# torch and paddle cannot coexist in the same process due to CUDA pybind11
+# type registration conflicts (_gpuDeviceProperties already registered).
+_original_find_spec = importlib.util.find_spec
+def _patched_find_spec(name, package=None):
+    if name == "torch" or name.startswith("torch."):
+        return None
+    return _original_find_spec(name, package)
+importlib.util.find_spec = _patched_find_spec
 
 import numpy as np
 
@@ -36,6 +47,7 @@ def configure_env() -> None:
             nvidia_dir / "cudnn" / "bin",
             nvidia_dir / "cublas" / "bin",
             nvidia_dir / "cuda_nvrtc" / "bin",
+            nvidia_dir / "cuda_runtime" / "bin",
         ]
         existing = [str(path) for path in dll_dirs if path.exists()]
         if existing:
