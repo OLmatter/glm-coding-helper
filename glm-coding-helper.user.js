@@ -434,7 +434,7 @@
         if ((PS.result === 'busy' || PS.result === 'sold_out') && !closePlan) {
             closePlan = {
                 startedAt: Date.now(),
-                delayMs: (CFG.CLOSE_INVALID_DELAY || 1500) + (Math.random() * 600 - 300),
+                delayMs: Math.max(0, (CFG.CLOSE_INVALID_DELAY || 1500) + (Math.random() * 600 - 300)),
                 reason: PS.result
             };
         }
@@ -735,8 +735,20 @@
         // 接口还没返回
         if (PS.inProgress) return 'keep';
         // ── 关闭计划：preview 返回 busy/sold_out 时，按 closePlan 判断是否关闭 ──
-        if ((PS.result === 'busy' || PS.result === 'sold_out') && closePlan) {
+        if (PS.result === 'busy' && closePlan) {
             if (Date.now() - closePlan.startedAt >= closePlan.delayMs) {
+                closePlan = null;
+                return 'close';
+            }
+            return 'keep';
+        }
+        if (PS.result === 'sold_out' && closePlan) {
+            if (Date.now() - closePlan.startedAt >= closePlan.delayMs) {
+                const prices = readDialogPrices();
+                if (prices?.any) {
+                    closePlan = null;
+                    return 'keep';
+                }
                 closePlan = null;
                 return 'close';
             }
@@ -1161,7 +1173,7 @@
             if (soldOutHits[key] >= SOLD_OUT_CONFIRM) setS(taskTarget.tab, taskTarget.pkg, 1);
         }
         setBar(`📦 ${TABS_MAP[taskTarget.tab]} · ${PKGS_MAP[taskTarget.pkg]} 售罄，继续...`);
-        qIdx++; taskTarget = null; taskPhase = 'IDLE'; taskRLCount = 0;
+        qIdx++; taskTarget = null; taskPhase = 'IDLE'; taskRLCount = 0; closePlan = null;
         state = 'SCANNING';
     }
     // ── v8.4: DOM 级按钮强制启用（安全网）─────────────────────────────────────
