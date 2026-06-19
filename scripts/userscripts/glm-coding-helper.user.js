@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         智谱 GLM Coding Plan 抢购助手 + 本地 OCR 自动验证码
 // @namespace    http://tampermonkey.net/
-// @version      8.19
+// @version      22.4
 // @description  GLM Coding Rush / 智谱 GLM Coding Plan 抢购助手，一键抢购油猴脚本 / Tampermonkey userscript，配合本地 CPU/GPU OCR 自动识别中文点选验证码并点击，支持多窗口并发、限流重试和支付页安全保护
 // @author       mumumi
 // @include      https://*bigmodel.cn/glm-coding*
@@ -347,6 +347,7 @@
         rawCode    : null,      // v8.9: 记录原始错误码(555/500等)
     };
     let everSucceeded = false;  // v8.9: 一旦拿到过有效 bizId，永不关闭弹窗
+    let closePlan = null;       // pre-generated close plan for invalid dialogs {startedAt, delayMs, reason}
     // ── fetch 拦截（/api/biz/pay/preview 和 check）──────────────────────────
     const _oF = window.fetch;
     // v8.0: 从 Cookie 提取 token 和从页面提取组织/项目信息
@@ -428,6 +429,14 @@
                 PS.inProgress = false;
                 throw e;
             }
+        }
+        // 生成关闭计划：preview 结果落定后，生成一次固定的 close plan
+        if ((PS.result === 'busy' || PS.result === 'sold_out') && !closePlan) {
+            closePlan = {
+                startedAt: Date.now(),
+                delayMs: Math.max(0, (CFG.CLOSE_INVALID_DELAY || 1500) + (Math.random() * 600 - 300)),
+                reason: PS.result
+            };
         }
         // 拦截 check：如果 bizId 为 null，直接返回失败
         if (url.includes('/api/biz/pay/check')) {
@@ -699,18 +708,25 @@
         if (everSucceeded) return 'keep';
         // 接口还没返回
         if (PS.inProgress) return 'keep';
-        // ── 情况 A：接口 555 系统繁忙 → 关弹窗试下一个
-        if (PS.result === 'busy') return 'close';
-        // ── 情况 B：接口返回 200+soldOut → 关弹窗试下一个（但前端可能因 JSON.parse 劫持而正常显示了价格）
-        if (PS.result === 'sold_out') {
-            if (Date.now() - taskClickTime >= 1500) {
+        // ── 关闭计划：preview 返回 busy/sold_out 时，按 closePlan 判断是否关闭 ──
+        if (PS.result === 'busy' && closePlan) {
+            if (Date.now() - closePlan.startedAt >= closePlan.delayMs) {
+                closePlan = null;
+                return 'close';
+            }
+            return 'keep';
+        }
+        if (PS.result === 'sold_out' && closePlan) {
+            if (Date.now() - closePlan.startedAt >= closePlan.delayMs) {
                 const prices = readDialogPrices();
                 if (prices?.any) {
-                    console.log('[GLM v8.9] soldOut但DOM有价格，保留弹窗（前端劫持覆盖了soldOut）');
+                    closePlan = null;
                     return 'keep';
                 }
+                closePlan = null;
+                return 'close';
             }
-            return 'close';
+            return 'keep';
         }
         // ── 情况 D：接口没说售罄/繁忙，但弹窗里出现小飞机 → 异常不一致
         if (hasAirplaneInDialog()) return 'warn';
@@ -835,6 +851,10 @@
                     <span style="font-size:14px;color:#555">自动关闭无效支付/限流弹窗（默认关闭）</span>
                     <span title="默认关闭，需手动开启才会自动关闭。&#10;开启后自动关闭以下弹窗并重试：&#10;1. 接口返回售罄但前端弹出的支付弹窗（二维码支付链接缺参数，扫码也无法付款）&#10;2. 限流弹窗（自动关闭后继续重试）&#10;关闭后遇到异常弹窗会停脚本，需手动处理" style="margin-left:6px;cursor:help;color:#999;font-size:14px;border:1px solid #ccc;border-radius:50%;width:18px;height:18px;display:inline-flex;align-items:center;justify-content:center;line-height:1">?</span>
                 </label>
+                <div style="display:flex;align-items:center;gap:6px;margin-top:4px;padding-left:26px">
+                    <span style="font-size:13px;color:#888">关闭无效弹窗等待延时 (ms):</span>
+                    <input type="number" id="glm-cd" value="${CFG.CLOSE_INVALID_DELAY}" min="0" max="10000" style="width:72px;padding:3px 6px;border:1px solid #d9d9d9;border-radius:4px;font-size:13px">
+                </div>
                 <label style="display:flex;align-items:center;cursor:pointer">
                     <input type="checkbox" id="glm-acs" ${CFG.AUTO_CLICK_SUB ? 'checked' : ''} style="margin-right:8px">
                     <span style="font-size:14px;color:#555">自动点击订阅</span>
@@ -873,6 +893,7 @@
                 SMART_REFRESH     : panel.querySelector('#glm-sm').checked,
                 CHECK_INTERVAL    : CFG.CHECK_INTERVAL,
                 AUTO_CLOSE_INVALID: panel.querySelector('#glm-aci').checked,
+                CLOSE_INVALID_DELAY: parseInt(panel.querySelector('#glm-cd').value, 10) || 1500,
                 AUTO_CLICK_SUB    : panel.querySelector('#glm-acs').checked,
                 AUTO_CAPTCHA_CLICK: panel.querySelector('#glm-acc').checked,
                 AUTO_CAPTCHA_CONFIRM: panel.querySelector('#glm-acf').checked,
@@ -1083,7 +1104,8 @@
                 setS(tab, pkg, 2); state = 'DONE';
                 setBar('🎉 订阅成功！恭喜！', '#237804'); return;
             }
-            if (!PS.inProgress && PS.result === 'sold_out' && Date.now() - taskClickTime > 2000) {
+            if (!PS.inProgress && PS.result === 'sold_out' && closePlan && Date.now() - closePlan.startedAt >= closePlan.delayMs && !isPayDialog()) {
+                closePlan = null;
                 exitTask(); return;
             }
             const elapsed = Date.now() - taskClickTime;
@@ -1106,7 +1128,7 @@
             if (soldOutHits[key] >= SOLD_OUT_CONFIRM) setS(taskTarget.tab, taskTarget.pkg, 1);
         }
         setBar(`📦 ${TABS_MAP[taskTarget.tab]} · ${PKGS_MAP[taskTarget.pkg]} 售罄，继续...`);
-        qIdx++; taskTarget = null; taskPhase = 'IDLE'; taskRLCount = 0;
+        qIdx++; taskTarget = null; taskPhase = 'IDLE'; taskRLCount = 0; closePlan = null;
         state = 'SCANNING';
     }
     // ── v8.4: DOM 级按钮强制启用（安全网）─────────────────────────────────────
