@@ -19,7 +19,7 @@ else:
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-MODEL_NAME = "PP-OCRv5_server_rec"
+MODEL_NAME = os.environ.get("GLM_OCR_MODEL", "PP-OCRv5_server_rec")
 ENGINE = "paddle_dynamic"
 CONSTRAINED_DECODE = True
 

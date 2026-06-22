@@ -48,7 +48,7 @@ def _smart_defaults():
     return yolo, ocr
 
 _smart_yolo, _smart_ocr = _smart_defaults()
-_DEFAULT = {"workers": _smart_yolo, "ocr_workers": _smart_ocr, "port": 8888}
+_DEFAULT = {"workers": _smart_yolo, "ocr_workers": _smart_ocr, "port": 8888, "ocr_model": "PP-OCRv5_server_rec"}
 
 if CONFIG_PATH.exists():
     try:
@@ -61,6 +61,8 @@ else:
 N_YOLO = max(1, int(_cfg.get("workers", _DEFAULT["workers"])))
 N_OCR  = max(1, int(_cfg.get("ocr_workers", _DEFAULT["ocr_workers"])))
 PORT   = max(1, int(_cfg.get("port", _DEFAULT["port"])))
+OCR_MODEL = str(_cfg.get("ocr_model", _DEFAULT["ocr_model"])).strip() or _DEFAULT["ocr_model"]
+os.environ["GLM_OCR_MODEL"] = OCR_MODEL
 
 if not CONFIG_PATH.exists():
     try:
