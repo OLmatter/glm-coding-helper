@@ -1,7 +1,7 @@
 ﻿// ==UserScript==
 // @name         智谱 GLM Coding Plan 抢购助手 + 本地 OCR 自动验证码
 // @namespace    http://tampermonkey.net/
-// @version      22.2
+// @version      23.2
 // @description  GLM Coding Rush / 智谱 GLM Coding Plan 抢购助手，一键抢购油猴脚本 / Tampermonkey userscript，配合本地 CPU/GPU OCR 自动识别中文点选验证码并点击，支持多窗口并发、限流重试和支付页安全保护
 // @author       mumumi
 // @include      https://*bigmodel.cn/glm-coding*
@@ -32,6 +32,8 @@
 // ==/UserScript==
 (function () {
     'use strict';
+    const SCRIPT_VERSION = '23.2';
+    const BOOT_BAR_ID = 'glm-helper-status-bar';
     const __glmHost = (() => { try { return location.hostname || ''; } catch { return ''; } })();
     const __inMiniMax = __glmHost === 'platform.minimaxi.com';
     if (__inMiniMax) {
@@ -45,6 +47,7 @@
     }
     function initTencentCaptchaDirectBridge() {
         const DIRECT_OCR_URL = 'http://127.0.0.1:8888/captcha_direct';
+        const RUNTIME_PAUSE_KEY = 'glm_runtime_paused_v1';
         const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
         let solving = false;
         let lastBgUrl = '';
@@ -58,6 +61,9 @@
         })();
         function log(msg) {
             console.log('[glm-captcha-direct] ' + msg);
+        }
+        function isRuntimePaused() {
+            try { return GM_getValue(RUNTIME_PAUSE_KEY, false) === true; } catch { return false; }
         }
         function visible(el) {
             if (!el) return false;
@@ -211,6 +217,7 @@
             return visible(note);
         }
         async function solveOnce() {
+            if (isRuntimePaused()) return;
             if (!captchaCfg.AUTO_CAPTCHA_CLICK) return;
             const bgEl = findBgElement();
             if (!bgEl) return;
@@ -241,7 +248,7 @@
                 await sleep(180);
             }
             await sleep(250);
-            if (captchaCfg.AUTO_CAPTCHA_CONFIRM) clickConfirm();
+            if (!isRuntimePaused() && captchaCfg.AUTO_CAPTCHA_CONFIRM) clickConfirm();
         }
         async function tick() {
             if (solving) return;
@@ -262,14 +269,102 @@
         setInterval(tick, 1200);
     }
     // ── 去重保护：防止篡猴里装了改名导致的两个实例同时运行 ──────────────────
-    if (document.documentElement.dataset.glmHelper === '1') { return; }
+    function ensureStatusBarNode() {
+        let bar = document.getElementById(BOOT_BAR_ID);
+        if (bar) return bar;
+        const parent = document.body || document.documentElement;
+        if (!parent) return null;
+        bar = document.createElement('div');
+        bar.id = BOOT_BAR_ID;
+        bar.style.cssText = 'position:fixed;bottom:0;left:0;right:0;z-index:2147483647;padding:7px 16px;font:13px/1.5 system-ui,sans-serif;color:#fff;display:flex;align-items:center;justify-content:space-between;box-shadow:0 -2px 8px rgba(0,0,0,.25);transition:background .4s';
+        const text = document.createElement('span');
+        const x = document.createElement('button');
+        x.textContent = '×';
+        x.style.cssText = 'background:rgba(255,255,255,.2);border:none;color:#fff;width:22px;height:22px;border-radius:4px;cursor:pointer;font-size:16px;line-height:1;flex-shrink:0';
+        x.onclick = () => { bar.remove(); };
+        bar.append(text, x);
+        parent.appendChild(bar);
+        return bar;
+    }
+    function setBootBar(html, bg = '#1677ff') {
+        const run = () => {
+            const bar = ensureStatusBarNode();
+            if (!bar) return;
+            bar.style.background = bg;
+            bar.firstElementChild.innerHTML = `🤖 <b>抢购助手 v${SCRIPT_VERSION}</b> &nbsp;|&nbsp; ${html}`;
+        };
+        if (document.body || document.documentElement) run();
+        else document.addEventListener('DOMContentLoaded', run, { once: true });
+    }
+    function requestBackendHealth(timeoutMs = 2500) {
+        return new Promise((resolve, reject) => {
+            const url = 'http://127.0.0.1:8888/health?from=glm_helper_' + Date.now();
+            let done = false;
+            const timer = setTimeout(() => {
+                if (done) return;
+                done = true;
+                reject(new Error('timeout'));
+            }, timeoutMs);
+            function finish(ok, value) {
+                if (done) return;
+                done = true;
+                clearTimeout(timer);
+                ok ? resolve(value) : reject(value);
+            }
+            if (typeof GM_xmlhttpRequest === 'function') {
+                GM_xmlhttpRequest({
+                    method: 'GET',
+                    url,
+                    timeout: timeoutMs,
+                    onload: (res) => {
+                        try { finish(true, JSON.parse(res.responseText || '{}')); }
+                        catch (e) { finish(false, e); }
+                    },
+                    onerror: () => finish(false, new Error('request failed')),
+                    ontimeout: () => finish(false, new Error('timeout')),
+                });
+                return;
+            }
+            fetch(url, { cache: 'no-store' })
+                .then(r => r.json())
+                .then(data => finish(true, data))
+                .catch(e => finish(false, e));
+        });
+    }
+    function bootBackendProbe() {
+        setBootBar('准备中：默认不主动点击订阅；按 <b>F9</b> 开启自动点击，或等待 Rush 目标时间。正在检查本地 OCR 后端...', '#1677ff');
+        requestBackendHealth().then((h) => {
+            const ready = `${h.ready_workers ?? '?'} / ${h.workers ?? '?'}`;
+            const status = h.status || 'unknown';
+            const color = status === 'ok' ? '#237804' : '#d46b08';
+            setBootBar(`已连接本地 OCR 后端：${status}，worker ${ready}，端口 ${h.port || 8888}。默认不自动点击订阅；按 <b>F9</b> 开启，按 <b>F8</b> 暂停。`, color);
+        }).catch(() => {
+            setBootBar('未连接本地 OCR 后端：请先启动后端 127.0.0.1:8888。脚本仍会准备页面，但验证码识别不可用；默认不自动点击订阅，按 <b>F9</b> 可手动开启。', '#d46b08');
+        });
+    }
+    if (document.documentElement.dataset.glmHelper === '1') {
+        setBootBar('检测到页面上已有一个抢购助手实例，本实例未重复启动。若没有状态提示，请在篡改猴里只保留最新版脚本。', '#d46b08');
+        return;
+    }
     document.documentElement.dataset.glmHelper = '1';
+    bootBackendProbe();
     // ── 最早读配置（document-start 时还没有主流程）──────────────────────────
     const EARLY_STORAGE_KEY = 'glm_coding_config_v5';
-    const SAFE_DEFAULTS_VERSION = 2;
+    const SAFE_DEFAULTS_VERSION = 4;
     const _ec = (() => { try { return JSON.parse(GM_getValue(EARLY_STORAGE_KEY, '{}')); } catch { return {}; } })();
     if (_ec.SAFE_DEFAULTS_VERSION !== SAFE_DEFAULTS_VERSION) {
         _ec.AUTO_CLOSE_INVALID = false;
+        _ec.AUTO_CLICK_SUB = false;
+        const oldRushTarget = (_ec.RUSH_TARGET_HOUR == null && _ec.RUSH_TARGET_MIN == null && _ec.RUSH_TARGET_SEC == null) ||
+            (Number(_ec.RUSH_TARGET_HOUR) === 9 && Number(_ec.RUSH_TARGET_MIN) === 59 && Number(_ec.RUSH_TARGET_SEC) === 58);
+        if (oldRushTarget) {
+            _ec.RUSH_TARGET_HOUR = 10;
+            _ec.RUSH_TARGET_MIN = 0;
+            _ec.RUSH_TARGET_SEC = 0;
+        }
+        if (_ec.RUSH_RELEASE_ADVANCE_MS == null || Number(_ec.RUSH_RELEASE_ADVANCE_MS) === 40) {
+            _ec.RUSH_RELEASE_ADVANCE_MS = 0;
+        }
         _ec.SAFE_DEFAULTS_VERSION = SAFE_DEFAULTS_VERSION;
         GM_setValue(EARLY_STORAGE_KEY, JSON.stringify(_ec));
     }
@@ -497,6 +592,7 @@
     }
     // ── 配置 ──────────────────────────────────────────────────────────────────
     const STORAGE_KEY = 'glm_coding_config_v5';
+    const RUNTIME_PAUSE_KEY = 'glm_runtime_paused_v1';
     const TABS_MAP    = { 1: '连续包月', 2: '连续包季', 3: '连续包年' };
     const PKGS_MAP    = { 1: 'Lite',    2: 'Pro',      3: 'Max'      };
     const DEF = {
@@ -505,7 +601,7 @@
         CHECK_INTERVAL    : 80,
         SMART_REFRESH     : true,
         AUTO_CLOSE_INVALID: false,
-        AUTO_CLICK_SUB    : true,
+        AUTO_CLICK_SUB    : false,
         AUTO_CAPTCHA_CLICK : true,
         AUTO_CAPTCHA_CONFIRM: false,
         CAPTCHA_CLICK_DELAY_MODE : 'range',
@@ -514,20 +610,182 @@
         CAPTCHA_CLICK_DELAY_MAX_MS: 400,
         CAPTCHA_CLICK_DELAY_JITTER_PERCENT: 20,
         RUSH_ENABLED        : false,
-        RUSH_TARGET_HOUR    : 9,
-        RUSH_TARGET_MIN     : 59,
-        RUSH_TARGET_SEC     : 58,
+        RUSH_TARGET_HOUR    : 10,
+        RUSH_TARGET_MIN     : 0,
+        RUSH_TARGET_SEC     : 0,
         RUSH_HOLD_WINDOW_MS : 10000,
-        RUSH_RELEASE_ADVANCE_MS: 40,
+        RUSH_RELEASE_ADVANCE_MS: 0,
+        HOTKEY_PAUSE: 'F8',
+        HOTKEY_AUTO_CLICK_SUB: 'F9',
     };
     function loadCfg() { try { const s = GM_getValue(STORAGE_KEY, null); return s ? { ...DEF, ...JSON.parse(s) } : { ...DEF }; } catch { return { ...DEF }; } }
     function saveCfg(c) { GM_setValue(STORAGE_KEY, JSON.stringify(c)); }
     const CFG = loadCfg();
+    let runtimePaused = (() => { try { return GM_getValue(RUNTIME_PAUSE_KEY, false) === true; } catch { return false; } })();
+    const RUSH_LATENCY_KEY = 'glm_rush_latency_v1';
+    function rushNumber(value, fallback) {
+        const n = parseInt(value, 10);
+        return Number.isFinite(n) ? n : fallback;
+    }
+    function getRushTargetTimestamp(now = Date.now()) {
+        const target = new Date(now);
+        target.setHours(
+            rushNumber(CFG.RUSH_TARGET_HOUR, 10),
+            rushNumber(CFG.RUSH_TARGET_MIN, 0),
+            rushNumber(CFG.RUSH_TARGET_SEC, 0),
+            0
+        );
+        return target.getTime();
+    }
+    function getRushRemainingMs(now = Date.now()) {
+        return getRushTargetTimestamp(now) - now;
+    }
+    function isRushTargetReached(now = Date.now()) {
+        return CFG.RUSH_ENABLED && getRushRemainingMs(now) <= 0;
+    }
+    function readyModeText() {
+        if (CFG.AUTO_CLICK_SUB) return `自动点击订阅已开启，${autoClickSubHotkey()} 可关闭`;
+        if (CFG.RUSH_ENABLED) {
+            const remaining = Math.max(0, getRushRemainingMs());
+            if (remaining > 0) return `准备中：默认不主动点击订阅，按 ${autoClickSubHotkey()} 手动开启，或等待目标时间 <b>${fmt(remaining)}</b>`;
+            return '目标时间已到：允许自动点击订阅';
+        }
+        return `准备中：默认不主动点击订阅，按 ${autoClickSubHotkey()} 开启，或手动点击订阅`;
+    }
+    function medianRush(values) {
+        const sorted = values.filter(Number.isFinite).sort((a, b) => a - b);
+        if (!sorted.length) return null;
+        return sorted[Math.floor(sorted.length / 2)];
+    }
+    function computeRushReleaseAdvance(rttMs) {
+        if (!Number.isFinite(rttMs)) return 0;
+        const oneWay = Math.max(0, rttMs / 2);
+        return Math.max(0, Math.min(180, Math.round(oneWay - 20)));
+    }
+    async function calibrateRushLatency() {
+        if (!CFG.RUSH_ENABLED) return;
+        const samples = [];
+        const url = GLM_CODING_URL() + '&rush_probe=' + Date.now();
+        for (let i = 0; i < 3; i++) {
+            try {
+                const t0 = performance.now();
+                await fetch(url + '_' + i, { method: 'GET', credentials: 'include', cache: 'no-store' });
+                samples.push(performance.now() - t0);
+            } catch (e) {}
+            if (i < 2) await new Promise(r => setTimeout(r, 160));
+        }
+        const rtt = medianRush(samples);
+        if (rtt == null) return;
+        const manualAdvance = Math.max(0, parseInt(CFG.RUSH_RELEASE_ADVANCE_MS, 10) || 0);
+        const autoAdvance = computeRushReleaseAdvance(rtt);
+        const advance = manualAdvance > 0 ? manualAdvance : autoAdvance;
+        const payload = { rttMs: Math.round(rtt), advanceMs: advance, at: Date.now(), source: manualAdvance > 0 ? 'manual' : 'auto' };
+        GM_setValue(RUSH_LATENCY_KEY, JSON.stringify(payload));
+        console.log('[GLM] rush latency calibrated:', payload);
+    }
     GM_registerMenuCommand('⚙️ 打开配置面板', openConfigPanel);
     GM_registerMenuCommand('🗑️ 清除今日套餐状态缓存', () => { localStorage.removeItem(_dsKey); alert('今日状态已清除，即将刷新。'); location.reload(); });
     GM_registerMenuCommand('🚀 一键多开窗口', openMultipleWindows);
+    function normalizeHotkeyString(value, fallback = '') {
+        const raw = String(value || '').trim();
+        if (!raw) return fallback;
+        const aliases = {
+            esc: 'Escape',
+            escape: 'Escape',
+            ins: 'Insert',
+            insert: 'Insert',
+            del: 'Delete',
+            delete: 'Delete',
+            space: 'Space',
+            ' ': 'Space',
+            pause: 'Pause',
+            home: 'Home',
+            end: 'End',
+            pgup: 'PageUp',
+            pageup: 'PageUp',
+            pgdn: 'PageDown',
+            pagedown: 'PageDown',
+        };
+        const parts = raw.split('+').map(s => s.trim()).filter(Boolean);
+        const mods = [];
+        let key = '';
+        for (const part of parts) {
+            const lower = part.toLowerCase();
+            if (lower === 'ctrl' || lower === 'control') { if (!mods.includes('Ctrl')) mods.push('Ctrl'); continue; }
+            if (lower === 'alt') { if (!mods.includes('Alt')) mods.push('Alt'); continue; }
+            if (lower === 'shift') { if (!mods.includes('Shift')) mods.push('Shift'); continue; }
+            if (lower === 'meta' || lower === 'cmd' || lower === 'win') { if (!mods.includes('Meta')) mods.push('Meta'); continue; }
+            if (/^f([1-9]|1[0-2])$/i.test(part)) key = part.toUpperCase();
+            else if (aliases[lower]) key = aliases[lower];
+            else if (part.length === 1) key = part.toUpperCase();
+            else key = part;
+        }
+        if (!key) return fallback;
+        return [...mods, key].join('+');
+    }
+    function hotkeyFromEvent(e) {
+        const mods = [];
+        if (e.ctrlKey) mods.push('Ctrl');
+        if (e.altKey) mods.push('Alt');
+        if (e.shiftKey) mods.push('Shift');
+        if (e.metaKey) mods.push('Meta');
+        let key = e.key || '';
+        if (!key || ['Control', 'Alt', 'Shift', 'Meta'].includes(key)) return '';
+        if (key === ' ') key = 'Space';
+        if (/^f([1-9]|1[0-2])$/i.test(key)) key = key.toUpperCase();
+        else if (key.length === 1) key = key.toUpperCase();
+        return [...mods, key].join('+');
+    }
+    function hotkeyMatches(e, hotkey) {
+        return normalizeHotkeyString(hotkey) === hotkeyFromEvent(e);
+    }
+    const pauseHotkey = () => normalizeHotkeyString(CFG.HOTKEY_PAUSE, 'F8');
+    const autoClickSubHotkey = () => normalizeHotkeyString(CFG.HOTKEY_AUTO_CLICK_SUB, 'F9');
+    GM_registerMenuCommand(`⏯️ 暂停/恢复脚本 (${pauseHotkey()})`, toggleRuntimePause);
+    GM_registerMenuCommand(`🖱️ 切换自动点击订阅 (${autoClickSubHotkey()})`, toggleAutoClickSub);
+    function saveRuntimeCfgPatch(patch) {
+        Object.assign(CFG, patch);
+        saveCfg({ ...CFG });
+    }
+    function setRuntimePaused(paused, source = 'hotkey') {
+        runtimePaused = paused === true;
+        GM_setValue(RUNTIME_PAUSE_KEY, runtimePaused);
+        if (runtimePaused) {
+            setBar(`⏸️ 脚本已暂停（${source}）。${pauseHotkey()} 恢复。`, '#722ed1');
+        } else {
+            setBar(`▶️ 脚本已恢复（${source}）。`, '#237804');
+        }
+    }
+    function toggleRuntimePause() {
+        setRuntimePaused(!runtimePaused);
+    }
+    function toggleAutoClickSub() {
+        const next = !CFG.AUTO_CLICK_SUB;
+        saveRuntimeCfgPatch({ AUTO_CLICK_SUB: next });
+        setBar(`${next ? '✅ 已开启' : '🛑 已关闭'}自动点击订阅（${autoClickSubHotkey()}）`, next ? '#237804' : '#d46b08');
+    }
+    function isEditableHotkeyTarget(el) {
+        if (!el) return false;
+        const tag = (el.tagName || '').toLowerCase();
+        return tag === 'input' || tag === 'textarea' || tag === 'select' || el.isContentEditable;
+    }
+    function handleControlHotkeys(e) {
+        if (isEditableHotkeyTarget(e.target)) return false;
+        if (hotkeyMatches(e, pauseHotkey())) {
+            e.preventDefault();
+            toggleRuntimePause();
+            return true;
+        }
+        if (hotkeyMatches(e, autoClickSubHotkey())) {
+            e.preventDefault();
+            toggleAutoClickSub();
+            return true;
+        }
+        return false;
+    }
     // ── v8.0: ESC 键快速关闭弹窗 ──────────────────────────────────────────────
     document.addEventListener('keydown', (e) => {
+        if (handleControlHotkeys(e)) return;
         if (e.key === 'Escape' || e.keyCode === 27) {
             const busyDlg = document.querySelector('.el-dialog__wrapper .empty-data-wrap');
             if (busyDlg) {
@@ -746,14 +1004,8 @@
     var _bar = null;
     function setBar(html, bg = '#1677ff') {
         if (!_bar) {
-            _bar = document.createElement('div');
-            _bar.style.cssText = 'position:fixed;bottom:0;left:0;right:0;z-index:2147483647;padding:7px 16px;font:13px/1.5 system-ui,sans-serif;color:#fff;display:flex;align-items:center;justify-content:space-between;box-shadow:0 -2px 8px rgba(0,0,0,.25);transition:background .4s';
-            const x = document.createElement('button');
-            x.textContent = '×';
-            x.style.cssText = 'background:rgba(255,255,255,.2);border:none;color:#fff;width:22px;height:22px;border-radius:4px;cursor:pointer;font-size:16px;line-height:1;flex-shrink:0';
-            x.onclick = () => { _bar.remove(); _bar = null; };
-            _bar.append(document.createElement('span'), x);
-            document.body.appendChild(_bar);
+            _bar = ensureStatusBarNode();
+            if (!_bar) return;
         }
         _bar.style.background = bg;
         _bar.firstElementChild.innerHTML = `🤖 <b>抢购助手</b> &nbsp;|&nbsp; ${html}`;
@@ -865,8 +1117,8 @@
                 </label>
                 <label style="display:flex;align-items:center;cursor:pointer">
                     <input type="checkbox" id="glm-acs" ${CFG.AUTO_CLICK_SUB ? 'checked' : ''} style="margin-right:8px">
-                    <span style="font-size:14px;color:#555">自动点击订阅</span>
-                    <span title="开启后脚本发现可购买的套餐会自动点击订阅按钮。&#10;关闭后只报警提醒，需手动点击（适合想自己掌控点击时机的场景）。" style="margin-left:6px;cursor:help;color:#999;font-size:14px;border:1px solid #ccc;border-radius:50%;width:18px;height:18px;display:inline-flex;align-items:center;justify-content:center;line-height:1">?</span>
+                    <span style="font-size:14px;color:#555">自动点击订阅（默认关闭）</span>
+                    <span title="默认关闭，避免脚本加载后自动触发购买链路。&#10;开启后脚本发现可购买的套餐会自动点击订阅按钮；也可用快捷键临时开启。&#10;Rush mode 到目标时间后可自动点击。" style="margin-left:6px;cursor:help;color:#999;font-size:14px;border:1px solid #ccc;border-radius:50%;width:18px;height:18px;display:inline-flex;align-items:center;justify-content:center;line-height:1">?</span>
                 </label>
                 <label style="display:flex;align-items:center;cursor:pointer">
                     <input type="checkbox" id="glm-acc" ${CFG.AUTO_CAPTCHA_CLICK ? 'checked' : ''} style="margin-right:8px">
@@ -896,6 +1148,7 @@
                 <label style="display:flex;align-items:center;cursor:pointer">
                     <input type="checkbox" id="glm-re" ${CFG.RUSH_ENABLED ? 'checked' : ''} style="margin-right:8px">
                     <span style="font-size:14px;color:#555">冲刺模式（定时确认）</span>
+                    <span title="开启后，脚本目标时间前不会自动点击订阅；目标时间已到才允许进入购买链路。验证码确定仍按实测 RTT 保守释放：不早于预测安全点，不晚于目标时间。" style="margin-left:6px;cursor:help;color:#999;font-size:14px;border:1px solid #ccc;border-radius:50%;width:18px;height:18px;display:inline-flex;align-items:center;justify-content:center;line-height:1">?</span>
                 </label>
                 <div style="display:flex;align-items:center;gap:6px;padding-left:26px">
                     <span style="font-size:13px;color:#888">目标时间</span>
@@ -904,6 +1157,20 @@
                     <input type="number" id="glm-rm" value="${CFG.RUSH_TARGET_MIN}" min="0" max="59" style="width:52px;padding:3px 6px;border:1px solid #d9d9d9;border-radius:4px;font-size:13px;text-align:center">
                     <span style="font-size:14px;color:#888">:</span>
                     <input type="number" id="glm-rs" value="${CFG.RUSH_TARGET_SEC}" min="0" max="59" style="width:52px;padding:3px 6px;border:1px solid #d9d9d9;border-radius:4px;font-size:13px;text-align:center">
+                </div>
+                <div style="border-top:1px dashed #eee;padding-top:12px;margin-top:4px"></div>
+                <div style="padding-left:26px;display:flex;flex-direction:column;gap:8px">
+                    <div style="display:flex;align-items:center;gap:8px">
+                        <span style="font-size:13px;color:#666">快捷键</span>
+                        <span title="默认使用外挂工具常见的单键 F8/F9，避开浏览器常见快捷键。点输入框后直接按想设置的键；在输入框、文本框、下拉框和可编辑区域内不会触发快捷键。" style="cursor:help;color:#999;font-size:14px;border:1px solid #ccc;border-radius:50%;width:18px;height:18px;display:inline-flex;align-items:center;justify-content:center;line-height:1">?</span>
+                    </div>
+                    <div style="display:grid;grid-template-columns:120px 1fr;gap:8px;align-items:center">
+                        <span style="font-size:13px;color:#888">暂停/恢复</span>
+                        <input id="glm-hk-pause" value="${pauseHotkey()}" readonly style="width:120px;padding:5px 8px;border:1px solid #d9d9d9;border-radius:4px;font-size:13px;text-align:center;background:#fafafa;cursor:pointer">
+                        <span style="font-size:13px;color:#888">自动点击订阅</span>
+                        <input id="glm-hk-sub" value="${autoClickSubHotkey()}" readonly style="width:120px;padding:5px 8px;border:1px solid #d9d9d9;border-radius:4px;font-size:13px;text-align:center;background:#fafafa;cursor:pointer">
+                    </div>
+                    <div style="font-size:12px;color:#999">推荐：F8/F9、Insert/Home/End。避免 F5/F11/F12、Ctrl/Alt 组合和输入法快捷键。</div>
                 </div>
             </div>
             <div style="display:flex;justify-content:space-between;gap:10px">
@@ -917,6 +1184,18 @@
         document.body.appendChild(ov);
         const getPkgs = buildTransferBox(document.getElementById('glm-wp'), PKGS_MAP, CFG.PACKAGES_PRIORITY, '套餐优先级');
         const getTabs = buildTransferBox(document.getElementById('glm-wt'), TABS_MAP, CFG.TABS_PRIORITY, '订阅周期优先级');
+        function bindHotkeyInput(input) {
+            input.title = '点击后按键录入';
+            input.addEventListener('keydown', e => {
+                e.preventDefault();
+                e.stopPropagation();
+                const hk = hotkeyFromEvent(e);
+                if (hk) input.value = hk;
+            });
+            input.addEventListener('focus', () => input.select());
+        }
+        bindHotkeyInput(panel.querySelector('#glm-hk-pause'));
+        bindHotkeyInput(panel.querySelector('#glm-hk-sub'));
         panel.querySelector('#glm-cc').onclick = () => ov.remove();
         panel.querySelector('#glm-multi').onclick = () => { openMultipleWindows(); };
         panel.querySelector('#glm-cs').onclick = () => {
@@ -940,6 +1219,9 @@
                 RUSH_TARGET_HOUR: parseInt(panel.querySelector('#glm-rh').value, 10),
                 RUSH_TARGET_MIN: parseInt(panel.querySelector('#glm-rm').value, 10),
                 RUSH_TARGET_SEC: parseInt(panel.querySelector('#glm-rs').value, 10),
+                RUSH_RELEASE_ADVANCE_MS: CFG.RUSH_RELEASE_ADVANCE_MS,
+                HOTKEY_PAUSE: normalizeHotkeyString(panel.querySelector('#glm-hk-pause').value, 'F8'),
+                HOTKEY_AUTO_CLICK_SUB: normalizeHotkeyString(panel.querySelector('#glm-hk-sub').value, 'F9'),
                 SAFE_DEFAULTS_VERSION,
             });
             ov.remove(); alert('已保存，即将刷新。'); location.reload();
@@ -951,6 +1233,10 @@
     // ═══════════════════════════════════════════════════════════════════════════
     function tick() {
         if (state === 'DONE') return;
+        if (runtimePaused) {
+            setBar(`⏸️ 脚本已暂停。${pauseHotkey()} 恢复。`, '#722ed1');
+            return;
+        }
         if (window.__glmRushConfirmed && window.__glmRushDialogSeen && !getPayDialog()) {
             window.__glmRushConfirmed = 0;
             window.__glmRushDialogSeen = 0;
@@ -978,7 +1264,7 @@
             taskTarget = { tab, pkg }; taskPhase = 'IDLE'; taskRLCount = 0;
             soldOutHits[`${tab}-${pkg}`] = 0;
             setS(tab, pkg, 0); state = 'TASK_UNIT';
-            setBar(`🎯 发现可购！${TABS_MAP[tab]} · ${PKGS_MAP[pkg]}，即将点击...`, '#389e0d');
+            setBar(`🎯 发现可购！${TABS_MAP[tab]} · ${PKGS_MAP[pkg]}，${readyModeText()}`, CFG.RUSH_ENABLED && !CFG.AUTO_CLICK_SUB ? '#722ed1' : '#389e0d');
             return;
         }
         if (isBusy(b)) {
@@ -1033,9 +1319,14 @@
                 setBar(`⏳ 等待按钮就绪... ${TABS_MAP[tab]} · ${PKGS_MAP[pkg]}`, '#d46b08');
                 return;
             }
-            if (!CFG.AUTO_CLICK_SUB) {
-                showPayAlarm();
-                setBar(`🎯 <b>发现可购！${TABS_MAP[tab]} · ${PKGS_MAP[pkg]}</b>，请手动点击订阅`, '#389e0d');
+            const rushReached = isRushTargetReached();
+            if (!CFG.AUTO_CLICK_SUB && !rushReached) {
+                if (CFG.RUSH_ENABLED) {
+                    const remaining = Math.max(0, getRushRemainingMs());
+                    setBar(`🎯 <b>发现可购！${TABS_MAP[tab]} · ${PKGS_MAP[pkg]}</b>，冲刺模式等待目标时间 <b>${fmt(remaining)}</b>；也可按 ${autoClickSubHotkey()} 手动开启自动点击`, '#722ed1');
+                } else {
+                    setBar(`🎯 <b>发现可购！${TABS_MAP[tab]} · ${PKGS_MAP[pkg]}</b>，默认不自动点击；请手动点击或按 ${autoClickSubHotkey()} 开启`, '#389e0d');
+                }
                 return;
             }
             PS.result = null; PS.inProgress = true;
@@ -1176,6 +1467,8 @@
         return true;
     }
     if (checkLogin()) {
+        setBar(`✅ 脚本已加载，${readyModeText()}`, CFG.RUSH_ENABLED && !CFG.AUTO_CLICK_SUB ? '#722ed1' : '#1677ff');
+        calibrateRushLatency();
         setInterval(tick, CFG.CHECK_INTERVAL);
         const _startDOM = () => {
             setInterval(forceEnableButtons, 500);
@@ -1200,19 +1493,24 @@
             const ph = parseInt(cfg.RUSH_TARGET_HOUR, 10);
             const pm = parseInt(cfg.RUSH_TARGET_MIN, 10);
             const ps = parseInt(cfg.RUSH_TARGET_SEC, 10);
+            const manualAdvance = Math.max(0, parseInt(cfg.RUSH_RELEASE_ADVANCE_MS, 10) || 0);
+            const latencyRaw = GM_getValue('glm_rush_latency_v1', '{}');
+            const latency = JSON.parse(latencyRaw || '{}');
+            const latencyFresh = latency && Number.isFinite(Number(latency.advanceMs)) && Date.now() - Number(latency.at || 0) < 10 * 60 * 1000;
+            const releaseAdvanceMs = manualAdvance > 0 ? manualAdvance : (latencyFresh ? Math.max(0, Math.min(180, Number(latency.advanceMs))) : 0);
             return {
                 enabled: cfg.RUSH_ENABLED === true,
-                targetHour: Number.isFinite(ph) ? ph : 9,
-                targetMin: Number.isFinite(pm) ? pm : 59,
-                targetSec: Number.isFinite(ps) ? ps : 58,
+                targetHour: Number.isFinite(ph) ? ph : 10,
+                targetMin: Number.isFinite(pm) ? pm : 0,
+                targetSec: Number.isFinite(ps) ? ps : 0,
                 holdWindowMs: Math.max(0, parseInt(cfg.RUSH_HOLD_WINDOW_MS, 10) || 10000),
-                releaseAdvanceMs: Math.max(0, parseInt(cfg.RUSH_RELEASE_ADVANCE_MS, 10) || 40),
+                releaseAdvanceMs: releaseAdvanceMs,
                 staggerMs: 2000,
                 pollInterval: 50,
                 pollTimeout: 20000,
             };
         } catch {
-            return { enabled: false, targetHour: 9, targetMin: 59, targetSec: 58, holdWindowMs: 10000, releaseAdvanceMs: 40, staggerMs: 2000, pollInterval: 50, pollTimeout: 20000 };
+            return { enabled: false, targetHour: 10, targetMin: 0, targetSec: 0, holdWindowMs: 10000, releaseAdvanceMs: 0, staggerMs: 2000, pollInterval: 50, pollTimeout: 20000 };
         }
     })();
     const CAPTCHA_CFG = (() => {
@@ -1314,11 +1612,14 @@
     }
     const captchaSession = {
         lastText: '',
+        lastBgUrl: '',
         sent: false,
         state: 'idle',
     };
     function getCaptchaLastText() { return captchaSession.lastText; }
     function setCaptchaLastText(text) { captchaSession.lastText = text || ''; }
+    function getCaptchaLastBgUrl() { return captchaSession.lastBgUrl; }
+    function setCaptchaLastBgUrl(url) { captchaSession.lastBgUrl = url || ''; }
     function isCaptchaSent() { return captchaSession.sent === true; }
     function setCaptchaSent(sent) { captchaSession.sent = sent === true; }
     function getCaptchaState() { return captchaSession.state; }
@@ -1326,6 +1627,7 @@
     function resetCaptchaSession() {
         setCaptchaSent(false);
         setCaptchaLastText('');
+        setCaptchaLastBgUrl('');
     }
     function serverRequest(method, path, data) {
         function doFetch() {
@@ -1978,8 +2280,13 @@
     async function finishCaptchaDirectConfirm() {
         if (RUSH_CFG.enabled) {
             var nowTs = Date.now();
+            var targetTs = getTargetTimestamp();
+            var remaining = targetTs - nowTs;
+            if (remaining > RUSH_CFG.holdWindowMs) {
+                console.log('[captcha-rush] outside hold window, skip auto confirm for ' + Math.ceil(remaining / 1000) + 's');
+                return;
+            }
             if (shouldHoldRushConfirm(nowTs)) {
-                var targetTs = getTargetTimestamp();
                 console.log('[captcha-rush] hold confirm for ' + Math.max(0, targetTs - nowTs).toFixed(0) + 'ms');
                 await waitForRushRelease();
                 console.log('[captcha-rush] release confirm');
@@ -2032,8 +2339,9 @@
         return { found: found, bgEl: bgEl, bgUrl: bgUrl, payloadText: payloadText };
     }
     function syncCaptchaChallengeText(challenge) {
-        if (challenge.payloadText !== getCaptchaLastText()) {
+        if (challenge.payloadText !== getCaptchaLastText() || challenge.bgUrl !== getCaptchaLastBgUrl()) {
             setCaptchaLastText(challenge.payloadText);
+            setCaptchaLastBgUrl(challenge.bgUrl);
             setCaptchaSent(false);
             console.log('[captcha] sel:', challenge.found.selector);
             console.log('[captcha] raw:', challenge.found.text);

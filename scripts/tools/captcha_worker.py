@@ -23,6 +23,15 @@ BACKEND_CONFIG = resolve_backend_config(source="worker")
 apply_backend_config(BACKEND_CONFIG)
 print_config(BACKEND_CONFIG)
 
+
+def _venv_python(venv_name: str) -> Path:
+    """跨平台返回虚拟环境里的 python 可执行文件路径。"""
+    base = ROOT / venv_name
+    if os.name == "nt":
+        return base / "Scripts" / "python.exe"
+    return base / "bin" / "python"
+
+
 _DEFAULT_DETECTOR_PATH = ROOT / "models" / "weights" / "yolo-captcha-detector.pt"
 _LEGACY_DETECTOR_PATH = (
     ROOT
@@ -45,7 +54,7 @@ if OCR_MODE in {"cpu", "cpu_parallel", "cpu-pool"}:
     OCR_PYTHON = Path(
         os.environ.get(
             "CNCAPTCHA_CPU_OCR_PYTHON",
-            str(ROOT / ".venv_paddle" / "Scripts" / "python.exe"),
+            str(_venv_python(".venv_paddle")),
         )
     )
     OCR_WORKER = ROOT / "scripts" / "tools" / "ppocr_cpu_pool_worker.py"
@@ -54,7 +63,7 @@ else:
     OCR_PYTHON = Path(
         os.environ.get(
             "CNCAPTCHA_GPU_OCR_PYTHON",
-            str(ROOT / ".venv_paddle_gpu" / "Scripts" / "python.exe"),
+            str(_venv_python(".venv_paddle_gpu")),
         )
     )
     OCR_WORKER = ROOT / "scripts" / "tools" / "ppocr_gpu_worker.py"

@@ -72,7 +72,9 @@ $CommonItems = @(
     "glm-coding-helper.user.js",
     "scripts\userscripts\glm-coding-captcha-direct.user.js",
     "one-click-start.cmd",
+    "one-click-start.command",
     "start-backend-pipeline-gui.cmd",
+    "start-backend-pipeline-gui.command",
     "start-backend-pipeline-gui.ps1",
     "README.md",
     "CHANGELOG.md",
@@ -80,6 +82,7 @@ $CommonItems = @(
     "requirements-backend-cpu.txt",
     "requirements-backend-gpu.txt",
     "scripts",
+    "docs",
     "models",
     "backend"
 )
@@ -99,14 +102,20 @@ $OnlineGuide = @"
 GLM Coding Helper online installer package
 
 Recommended:
-1. Install or update Tampermonkey script from glm-coding-helper.user.js.
-2. Double-click one-click-start.cmd.
-3. It will install CPU/GPU backend dependencies automatically when missing, then start the backend.
+1. Extract this package to a short path, for example C:\glm-coding-helper.
+2. Install or update Tampermonkey script from glm-coding-helper.user.js.
+3. Double-click one-click-start.cmd.
+4. It will install CPU/GPU backend dependencies automatically when missing, then start the backend.
+
+Important:
+- Avoid very deep extract paths. Some backend dependencies contain long internal paths.
+- If pip reports "No such file or directory" during install, move the folder to a short path like C:\glm-coding-helper and retry.
 
 Manual:
 - one-click-start.cmd installs the CPU backend environment on first run.
 - start-backend-pipeline-gui.cmd launches the pipeline backend with a Tk GUI window.
 - scripts\start_backend.ps1 starts the backend after environment exists.
+- macOS: run chmod +x one-click-start.command start-backend-pipeline-gui.command scripts/setup_backend_macos.sh if Finder blocks the scripts, then double-click one-click-start.command for first setup.
 "@
 Set-Content -LiteralPath (Join-Path $OnlineDir "ONLINE_INSTALLER_README.txt") -Value $OnlineGuide -Encoding UTF8
 New-Zip -PackageDir $OnlineDir -ZipPath (Join-Path $OutRoot "$OnlineName.zip")

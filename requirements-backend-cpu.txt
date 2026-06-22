@@ -8,9 +8,9 @@ paddleocr==3.5.0
 paddlex==3.5.2
 pyclipper==1.4.0
 shapely==2.1.2
-pyautogui
-pydirectinput
-mss
+pyautogui; sys_platform == "win32"
+pydirectinput; sys_platform == "win32"
+mss; sys_platform == "win32"
 websocket-client
 fastapi
 uvicorn[standard]

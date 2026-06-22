@@ -1,0 +1,66 @@
+<p><strong>GLM Coding Plan 抢购助手 + 本地自动验证码</strong></p>
+
+<p>
+这是一个用于智谱 GLM Coding Plan 页面流程辅助的油猴脚本，配合本地 CPU/GPU OCR 后端使用，可以自动识别中文点选验证码并完成点击。
+项目同时提供 Windows 一键启动包和 macOS Apple Silicon 启动脚本。
+</p>
+
+<p><strong>主要功能：</strong></p>
+<ul>
+  <li>提前让套餐按钮可点击，减少手动刷新等待</li>
+  <li>辅助 GLM Coding Plan 限流后的重试流程</li>
+  <li>调用本地 OCR 后端识别中文点选验证码</li>
+  <li>自动点击验证码图片中的目标文字</li>
+  <li>支持 Rush mode 定时确认，默认目标时间为 10:00:00</li>
+  <li>默认不自动点击订阅，避免脚本加载后主动进入购买链路；到点或用户按快捷键开启后才开始</li>
+  <li>支持快捷键暂停/恢复脚本、切换自动点击订阅，并可在配置面板自定义快捷键</li>
+  <li>支持配置面板、一键多开窗口、清除今日套餐状态缓存</li>
+  <li>支持 Windows 一键启动后端；macOS Apple Silicon 可使用 <code>.command</code> 启动脚本</li>
+  <li>默认使用作者内置折扣入口，可获得 95 折优惠；介意者可自行修改脚本入口参数</li>
+</ul>
+
+<p><strong>抢购步骤：</strong></p>
+<p>
+1、先安装好油猴插件，配置好油猴脚本。使用 Chrome 插件时，要在页面右上角开启开发者模式，然后找到篡改猴插件点击详情，把允许运行用户脚本、在无痕模式下启用、允许访问文件网址都打开。<br>
+2、安装后端。Windows 用户可下载 GitHub Release 里的在线安装包或便携 CPU 包；macOS 用户请使用 Apple Silicon 机器，并按 <code>docs/macos-setup.md</code> 安装 Python 3.12 后运行 <code>one-click-start.command</code>。<br>
+3、打开抢购网址测试，看后端识别、验证码点击和页面辅助功能是不是正常。<br>
+4、每天 9 点 50 分前进入抢购页面准备，晚了可能就打不开。顺便准备好手机支付宝付款；我曾经遇到过有金额但付款慢了就没了。<br>
+5、多开几个窗口。默认不要让脚本过早自动点击订阅；到点后由 Rush mode 进入购买链路，或者你按快捷键显式开启自动点击。验证码可以先识别并点击好，但不要过早确认；Rush mode 会按目标时间保守释放确认。<br>
+6、如果这波没抢到，就盯着一个窗口用 OCR 继续识别点击。默认不会自动关闭支付页面。注意：如果看到没有金额的支付页面，那就是没抢到，要关掉继续抢。这时候可以使用快捷键进行快速操作。
+</p>
+
+<p><strong>快捷键：</strong></p>
+<ul>
+  <li><code>Esc</code>：关闭系统繁忙弹窗或支付弹窗</li>
+  <li><code>Enter</code> / <code>Space</code>：点击验证码确认按钮</li>
+  <li><code>F8</code>：暂停/恢复脚本；暂停后停止扫描、订阅点击、验证码自动点击/确认</li>
+  <li><code>F9</code>：切换自动点击订阅</li>
+</ul>
+
+<p>
+<strong>说明：</strong><code>F8/F9</code> 是默认快捷键，可在配置面板中自定义。脚本会避开输入框、文本框、下拉框和可编辑区域，避免正常输入时误触发。
+</p>
+
+<p><strong>重要提醒：</strong></p>
+<ul>
+  <li>默认不会自动点击验证码“确定”按钮，需要在配置面板里手动开启。</li>
+  <li>默认不会自动点击订阅按钮，避免脚本加载后主动触发购买链路；需要在配置面板或用 <code>F9</code> 开启。</li>
+  <li>默认不会自动关闭无效支付链接或限流弹窗，需要在配置面板里手动开启。</li>
+  <li>遇到真正有金额的支付二维码，请自行确认后再扫码支付。</li>
+  <li>macOS 版目前仅支持 Apple Silicon + CPU 后端，不支持 Windows 那套自动截图验证码弹窗；主流程通过油猴脚本直接发送验证码原图到本地后端。</li>
+  <li>抢购是否成功受库存、限流、账号状态、支付速度等因素影响，脚本不能保证一定抢到。</li>
+</ul>
+
+<p><strong>GitHub 仓库：</strong></p>
+<p><a href="https://github.com/OLmatter/glm-coding-helper" rel="nofollow">https://github.com/OLmatter/glm-coding-helper</a></p>
+
+<p><strong>Telegram 交流群：</strong></p>
+<p><a href="https://t.me/+s1flX6cpUZ1kM2M1" rel="nofollow">https://t.me/+s1flX6cpUZ1kM2M1</a></p>
+
+<p><strong>致谢：</strong></p>
+<p>
+本脚本是在 Greasy Fork 用户 <code>mumumi</code> 的《GLM Coding Plan抢购助手》基础上二次开发而来，感谢原作者的维护和分享。原脚本采用 GNU GPLv3 许可证，本脚本继续使用 GNU GPLv3。
+</p>
+
+<p><strong>风险提示：</strong></p>
+<p>本项目仅用于个人学习和流程辅助。请自行确认目标网站规则、购买行为和支付风险。</p>

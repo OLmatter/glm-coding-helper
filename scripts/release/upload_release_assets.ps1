@@ -35,7 +35,7 @@ if (-not $Tag) {
 Release assets:
 
 - Online installer package: small package, installs CPU/GPU environment on first run.
-- Portable CPU package: includes CPU backend environment, unzip and start directly.
+- Portable CPU package: includes local model/cache files; first run creates the CPU backend environment on the user's computer.
 "@
         gh release create $Tag --repo $Repo --title "GLM Coding Helper $Tag" --notes $notes
         if ($LASTEXITCODE -ne 0) {

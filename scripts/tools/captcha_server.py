@@ -11,8 +11,12 @@ import argparse
 from datetime import datetime, timezone
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from pathlib import Path
-import tkinter as tk
-from tkinter import ttk
+try:
+    import tkinter as tk
+    from tkinter import ttk
+except ImportError:
+    tk = None
+    ttk = None
 
 sys.setswitchinterval(0.001)
 
@@ -31,13 +35,18 @@ from backend_config import (
     resolve_backend_config,
 )
 
+capture_browser_window = None
+find_windows = None
+if sys.platform == "win32":
+    try:
+        from window_helper import capture_browser_window, find_windows
+    except (ImportError, AttributeError, OSError) as exc:
+        print(f"Warning: Windows monitor module unavailable: {exc}")
+
 try:
-    from window_helper import capture_browser_window, find_windows
     from captcha_crop import crop_challenge_image
 except ImportError:
-    print("Warning: monitor modules not found.")
-    capture_browser_window = None
-    find_windows = None
+    print("Warning: captcha crop module not found.")
     crop_challenge_image = None
 
 DATASET_DIR = ROOT / "dataset" / "auto_captured"
@@ -534,6 +543,8 @@ class CaptchaHandler(BaseHTTPRequestHandler):
     def log_message(self, *args): pass
 
 def run_gui():
+    if tk is None or ttk is None:
+        raise RuntimeError("Tk is unavailable; install Tk support or use --headless")
     root = tk.Tk()
     root.title("Captcha Server v2 - Auto Rush Mode")
     root.geometry("620x380")
@@ -541,9 +552,18 @@ def run_gui():
     root.configure(bg="#f0f2f5")
 
     style = ttk.Style()
-    style.configure("TLabel", background="#f0f2f5", font=("Microsoft YaHei UI", 10))
-    style.configure("Status.TLabel", font=("Microsoft YaHei UI", 12, "bold"), foreground="#1890ff")
-    style.configure("Success.TLabel", font=("Microsoft YaHei UI", 11, "bold"), foreground="#52c41a")
+
+    def _ui_font():
+        return "PingFang SC" if sys.platform == "darwin" else "Microsoft YaHei UI"
+
+    def _mono_font():
+        return "Menlo" if sys.platform == "darwin" else "Consolas"
+
+    ui_font = _ui_font()
+    mono_font = _mono_font()
+    style.configure("TLabel", background="#f0f2f5", font=(ui_font, 10))
+    style.configure("Status.TLabel", font=(ui_font, 12, "bold"), foreground="#1890ff")
+    style.configure("Success.TLabel", font=(ui_font, 11, "bold"), foreground="#52c41a")
 
     main_frame = ttk.Frame(root, padding="15")
     main_frame.pack(fill=tk.BOTH, expand=True)
@@ -565,7 +585,7 @@ def run_gui():
     lbl_save = ttk.Label(main_frame, text="无", wraplength=320)
     lbl_save.grid(row=row, column=1, sticky=tk.W, pady=2); row += 1
 
-    log_box = tk.Text(main_frame, height=13, width=70, font=("Consolas", 9), bg="#ffffff", relief=tk.FLAT)
+    log_box = tk.Text(main_frame, height=13, width=70, font=(mono_font, 9), bg="#ffffff", relief=tk.FLAT)
     log_box.grid(row=row, column=0, columnspan=3, pady=8); row += 1
 
     def update_gui():

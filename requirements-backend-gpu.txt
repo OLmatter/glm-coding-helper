@@ -9,6 +9,7 @@ paddlex==3.5.2
 nvidia-cublas-cu11==11.11.3.6
 nvidia-cuda-nvrtc-cu11==11.8.89
 nvidia-cudnn-cu11==8.9.5.29
+safetensors
 pyclipper==1.4.0
 shapely==2.1.2
 pyautogui

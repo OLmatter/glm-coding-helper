@@ -89,6 +89,11 @@ def _gpu_probe_env() -> dict[str, str]:
 
 
 def detect_gpu(timeout: float = 45.0) -> tuple[bool, str]:
+    # macOS 没有 CUDA：PaddlePaddle 在 mac 上只提供 CPU wheel，
+    # paddlepaddle-gpu 和 nvidia-* 依赖也无法安装。直接跳过 GPU 探测。
+    if sys.platform == "darwin":
+        return False, "GPU unavailable on macOS (PaddlePaddle ships CPU-only wheels)"
+
     if parse_bool(os.environ.get("CNCAPTCHA_SKIP_GPU_DETECT"), False):
         return False, "skipped by CNCAPTCHA_SKIP_GPU_DETECT"
 
