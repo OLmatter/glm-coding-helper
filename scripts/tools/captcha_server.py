@@ -654,7 +654,31 @@ def run_gui():
         try:
             log_to_gui("预热识别子进程...")
             _get_worker()
-            log_to_gui("识别子进程就绪！")
+            log_to_gui("识别子进程就绪，开始模型预热...")
+            # 子进程启动 ≠ 模型预热完成。PaddleOCR 第一次真推理会做 JIT 编译，
+            # 实测耗时 7-12s。如果首个真验证码撞上 JIT，客户端必断（WinError 10053
+            # 或浏览器 fetch timeout），结果识别出来了也来不及点。
+            # 这里跑一次 dummy 推理把整条 yolo+ocr 链路打热。
+            try:
+                debug_dir = ROOT / "dataset" / "debug_captcha_direct"
+                warmup_path = None
+                if debug_dir.exists():
+                    for p in debug_dir.iterdir():
+                        if p.suffix.lower() == ".png":
+                            warmup_path = p
+                            break
+                if warmup_path is None:
+                    # 兜底：生成一张全白 480x672 图，跟真验证码同尺寸
+                    from PIL import Image as _Img
+                    warmup_path = ROOT / "dataset" / "_warmup.png"
+                    warmup_path.parent.mkdir(parents=True, exist_ok=True)
+                    if not warmup_path.exists():
+                        _Img.new("RGB", (672, 480), "white").save(warmup_path)
+                _wt0 = time.perf_counter()
+                _ = recognize_captcha(str(warmup_path), list("测试图"), crop_rect=None)
+                log_to_gui(f"模型预热完成 ({(time.perf_counter()-_wt0)*1000:.0f}ms)")
+            except Exception as we:
+                log_to_gui(f"预热失败（不影响功能，仅首次会慢）: {we}")
         except Exception as e:
             log_to_gui(f"子进程启动失败: {e}")
 
