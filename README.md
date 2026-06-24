@@ -325,6 +325,22 @@ docs/captcha_model_journey.md
 
 ## 常见问题
 
+### 浏览器控制台报 "Permission was denied for ... loopback address space"（验证码偶尔不识别）
+
+Chrome 130+ 启用了 **Local Network Access**（LNA）策略，会拦截公网 HTTPS 页面（`bigmodel.cn`）对本机 loopback（`localhost:8888`）的 `fetch` 请求。脚本里已经做了双通道兜底（`fetch` 失败时切到 Tampermonkey 的 `GM_xmlhttpRequest`），但在某些 Chrome 配置下扩展通道也会受影响，导致验证码偶发不识别。
+
+**根治办法（任选其一）**：
+
+1. **关 LNA 强制策略**（推荐，本机自用绝对安全）：地址栏访问
+   ```
+   chrome://flags/#block-insecure-private-network-requests
+   ```
+   设为 **Disabled**，重启 Chrome。这是把 Chrome 早期的 PNA/LNA 强约束关掉，让 `fetch` 直通 `localhost`。
+2. **改用 Edge 或 Firefox**：Edge 跟进 LNA 较慢，Firefox 没有同等策略，开箱即用。
+3. **配 HTTPS + 信任自签证书**：高阶用法，本仓库暂不内置脚本。
+
+注意区分这条红字和「后端没启动」：先在 PowerShell 跑 `curl http://localhost:8888/health`，能拿到 JSON 就说明后端没问题，红字是浏览器策略，按上面三选一。
+
 ### 识别结果或点击位置像是错位、滞后一张图？
 
 先刷新一下浏览器页面，再重新打开验证码测试。验证码弹窗刷新、页面状态缓存、多窗口切换或浏览器缩放状态异常时，前端显示和后端识别可能短暂不同步。

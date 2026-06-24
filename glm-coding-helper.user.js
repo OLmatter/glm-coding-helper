@@ -19,6 +19,7 @@
 // @grant        GM_xmlhttpRequest
 // @connect      localhost
 // @connect      localhost:8888
+// @connect      127.0.0.1
 // @connect      127.0.0.1:8888
 // @connect      gtimg.com
 // @connect      *.gtimg.com
@@ -179,7 +180,10 @@
                     });
                 });
             }
-            return doFetch().catch(() => doGM());
+            // 同 serverRequest：localhost 路径优先走 GM 以避开 LNA fetch 拦截
+            return (typeof GM_xmlhttpRequest === 'function')
+                ? doGM().catch(() => doFetch())
+                : doFetch();
         }
         function dispatchClick(el, nx, ny, label) {
             const rect = el.getBoundingClientRect();
@@ -1663,7 +1667,14 @@
         lastBgUrl: '',
         sent: false,
         state: 'idle',
+        // 失败保护：错一次冷却一会、连续错够 N 次直接停手，避免被腾讯 SDK 自我重置
+        // 的循环吸进 50ms 一发的自激振荡（一直打同一张图把后端打爆）。
+        failCount: 0,
+        cooldownUntil: 0,
+        stopped: false,
     };
+    const CAPTCHA_FAIL_COOLDOWN_MS = 1500;   // 单次失败冷却 1.5 秒
+    const CAPTCHA_FAIL_HARD_LIMIT = 3;       // 连续失败 ≥3 次后彻底停手
     function getCaptchaLastText() { return captchaSession.lastText; }
     function setCaptchaLastText(text) { captchaSession.lastText = text || ''; }
     function getCaptchaLastBgUrl() { return captchaSession.lastBgUrl; }
@@ -1672,6 +1683,24 @@
     function setCaptchaSent(sent) { captchaSession.sent = sent === true; }
     function getCaptchaState() { return captchaSession.state; }
     function setCaptchaState(state) { captchaSession.state = state; }
+    function isCaptchaStopped() { return captchaSession.stopped === true; }
+    function inCaptchaCooldown() { return Date.now() < captchaSession.cooldownUntil; }
+    function noteCaptchaFailure() {
+        captchaSession.failCount += 1;
+        captchaSession.cooldownUntil = Date.now() + CAPTCHA_FAIL_COOLDOWN_MS;
+        if (captchaSession.failCount >= CAPTCHA_FAIL_HARD_LIMIT) {
+            captchaSession.stopped = true;
+            console.warn('[captcha] 连续失败 ' + captchaSession.failCount + ' 次，自动验证已停止；'
+                + '请手动完成本次验证码，然后刷新页面或重新打开抢购弹窗以恢复自动模式。');
+        } else {
+            console.warn('[captcha] 失败 ' + captchaSession.failCount + '/' + CAPTCHA_FAIL_HARD_LIMIT
+                + '，冷却 ' + CAPTCHA_FAIL_COOLDOWN_MS + 'ms 后再试');
+        }
+    }
+    function noteCaptchaSuccess() {
+        captchaSession.failCount = 0;
+        captchaSession.cooldownUntil = 0;
+    }
     function resetCaptchaSession() {
         setCaptchaSent(false);
         setCaptchaLastText('');
@@ -1700,11 +1729,28 @@
                         try { resolve(JSON.parse(r.responseText)); }
                         catch { resolve({ raw: r.responseText }); }
                     },
-                    onerror: (e) => reject(new Error('GM_xmlhttpRequest error: ' + e)),
+                    onerror: (e) => {
+                        // GM onerror 的 e 通常是 ProgressEvent 或 Tampermonkey 的错误对象，
+                        // 用 status/statusText 给出可读信息，便于诊断
+                        var info = 'unknown';
+                        if (e && typeof e === 'object') {
+                            info = 'status=' + (e.status || 0) +
+                                   ' statusText=' + (e.statusText || '') +
+                                   ' error=' + (e.error || '');
+                        }
+                        reject(new Error('GM_xmlhttpRequest error: ' + info));
+                    },
                 });
             });
         }
-        return doFetch().catch(() => doGM());
+        // Chrome 130+ 的 Local Network Access 在某些配置下会硬拦 https → loopback 的
+        // fetch，preflight 都发不出去。fetch 路径每次都报 "Permission was denied for
+        // the loopback address space"，等 catch 进 GM 时业务上下文可能已经过期。
+        // 因此 localhost 请求**优先走 GM_xmlhttpRequest**（扩展进程，绕过页面网络栈），
+        // 只有当 GM 不可用（非 Tampermonkey 环境）时才退回 fetch。
+        return (typeof GM_xmlhttpRequest === 'function')
+            ? doGM().catch(() => doFetch())
+            : doFetch();
     }
     function pollResult(ts) {
         return new Promise((resolve, reject) => {
@@ -2369,9 +2415,14 @@
             var result = await requestCaptchaDirectResult(payloadText, target.bgUrl);
             await clickCaptchaDirectCoords(target.bgEl, result);
             await finishCaptchaDirectConfirm();
+            noteCaptchaSuccess();
         } catch (e) {
             console.error('[captcha-direct-page] error:', e);
-            resetCaptchaSession();
+            // 注意：这里**不要**调 resetCaptchaSession()。原来的逻辑会立刻把 sent 清成
+            // false，下一个 50ms tick 又对同一张图开火，形成自激振荡（被腾讯 SDK 的自我
+            // 重置吸进死循环）。改为 noteCaptchaFailure 触发冷却 + 累计计数，连续失败
+            // 够多次后干脆停手等用户介入。
+            noteCaptchaFailure();
         } finally {
             setCaptchaState('idle');
         }
@@ -2415,6 +2466,8 @@
         });
     }
     async function checkCaptchaPrompt() {
+        if (isCaptchaStopped()) return;            // 连续失败被熔断后彻底停手
+        if (inCaptchaCooldown()) return;           // 失败冷却中，不开新一发
         if (getCaptchaState() === 'solving') return;
         var challenge = collectCaptchaChallenge();
         if (!challenge) return;
