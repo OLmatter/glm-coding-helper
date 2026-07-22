@@ -1,5 +1,11 @@
 ﻿# 智谱 GLM Coding Plan 抢购助手 + 本地 OCR 自动验证码
 
+> ⚠️ **2026-07 更新：智谱国内 GLM Coding Plan 基本不放货了，抢购难度极高。**
+>
+> 如果你想看其他厂商的对比，我们整理了**主流 Coding Plan 价格 + 用量 + 优惠对比榜单**（火山方舟 / 智谱 / Z.AI / MiniMax / Kimi，含邀请码一键复制）：
+>
+> 📊 **[看完整对比榜单 →](https://OLmatter.github.io/llm-api-ledger/)**
+
 这是一个面向智谱 GLM Coding Plan 的抢购辅助项目，包含 Tampermonkey 油猴脚本和本地 CPU/GPU OCR 后端，用于限时抢购流程辅助、一键启动后端、中文点选验证码自动识别、验证码自动点击、套餐按钮提前可点、限流重试和多窗口监控。目前仅适配 Google Chrome 和 Microsoft Edge，推荐使用 Chrome。
 
 关键词：GLM Coding Rush、GLM Coding Plan 抢购助手、GLM Coding Plan 抢购脚本、GLM Coding Plan 一键抢购、GLM Coding 一键启动、智谱 GLM Coding 抢购、智谱编程套餐抢购、GLM Coding 油猴脚本、Tampermonkey userscript、Auto-Purchase Userscript、自动解锁售罄、限流重试、多窗口并发、本地 OCR、CPU OCR、GPU OCR、中文点选验证码、验证码自动点击、订阅助手。
