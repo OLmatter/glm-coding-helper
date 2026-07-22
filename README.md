@@ -4,7 +4,7 @@
 >
 > 如果你想看其他厂商的对比，我们整理了**主流 Coding Plan 价格 + 用量 + 优惠对比榜单**（火山方舟 / 智谱 / Z.AI / MiniMax / Kimi，含邀请码一键复制）：
 >
-> 📊 **[看完整对比榜单 →](https://OLmatter.github.io/llm-api-ledger/)**
+> 📊 **[看完整对比榜单 →](https://OLmatter.github.io/llm-api-ledger/)** ｜ 💬 **[TG 交流群 →](https://t.me/+s1flX6cpUZ1kM2M1)**（聊大模型套餐选型 + 使用量上报 + 抢购问题）
 
 这是一个面向智谱 GLM Coding Plan 的抢购辅助项目，包含 Tampermonkey 油猴脚本和本地 CPU/GPU OCR 后端，用于限时抢购流程辅助、一键启动后端、中文点选验证码自动识别、验证码自动点击、套餐按钮提前可点、限流重试和多窗口监控。目前仅适配 Google Chrome 和 Microsoft Edge，推荐使用 Chrome。
 
@@ -200,7 +200,17 @@ https://www.bigmodel.cn/glm-coding
 
 油猴菜单里可以打开配置面板、一键多开窗口、清除今日套餐状态缓存。
 
-抢购交流群https://t.me/+s1flX6cpUZ1kM2M1
+## 交流群 & 姐妹项目
+
+**Telegram 交流群**：https://t.me/+s1flX6cpUZ1kM2M1
+
+群里聊大模型套餐抢购、选型、使用量，抢购脚本的问题也欢迎群里问。
+
+> 📊 **顺便推荐我们的另一个项目 —— [LLM API Ledger](https://github.com/OLmatter/llm-api-ledger)**（[榜单页](https://olmatter.github.io/llm-api-ledger/)）
+>
+> 集齐主流厂商 Coding Plan 套餐的**真实用量**横评榜单（火山 / 智谱 / Kimi / MiniMax / Z.AI 等）。不靠厂商宣传，靠大家本地装探针核账 + 众包脱敏上报。
+>
+> 抢到套餐之后不知道能跑多少？想横向对比哪家划算？想把自己实测的使用量报上来帮助更多人？欢迎来 [Ledger](https://github.com/OLmatter/llm-api-ledger) 看榜单、提 Issue、进同一个 TG 群聊。**两个项目共用一个群。**
 
 智谱官方飞书群<img width="210" height="222" alt="image" src="https://github.com/user-attachments/assets/4c763912-2699-4579-915d-215ae38860db" />
 
