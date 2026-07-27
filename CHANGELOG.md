@@ -1,5 +1,9 @@
 # 修复历史
 
+## 2026-07-28
+
+- 发布用户脚本 v23.12：更新 MiniMax Token Plan 邀请码，从 `IKhXTPYbQC` 改为 `KkI58QB9Ip`（`MINIMAX_CODE` 数组拆分 `['KkI','58QB','9Ip']`）。油猴菜单「打开 MiniMax Token Plan 优惠入口」和 minimax 订阅页 URL 自动注入同步换码。邀请码字符串只在 `initMiniMaxTokenPlanEntry` 函数内引用，未污染其他模块。
+
 ## 2026-07-16
 
 - 启动脚本体验改进（不涉及油猴脚本，用户脚本版本仍为 v23.11）：

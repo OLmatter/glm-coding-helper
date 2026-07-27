@@ -1,7 +1,7 @@
 ﻿// ==UserScript==
 // @name         智谱 GLM Coding Plan 抢购助手 + 本地 OCR 自动验证码
 // @namespace    http://tampermonkey.net/
-// @version      23.11
+// @version      23.12
 // @description  GLM Coding Rush / 智谱 GLM Coding Plan 抢购助手，一键抢购油猴脚本 / Tampermonkey userscript，配合本地 CPU/GPU OCR（PP-OCRv6）自动识别中文点选验证码并点击，支持多窗口并发、限流重试和支付页安全保护。订阅入口被风控拦截时手动点「特惠订阅」即可，验证码自动打。
 // @author       mumumi
 // @include      https://*bigmodel.cn/glm-coding*
@@ -34,7 +34,7 @@
 // ==/UserScript==
 (function () {
     'use strict';
-    const SCRIPT_VERSION = '23.11';
+    const SCRIPT_VERSION = '23.12';
     const BOOT_BAR_ID = 'glm-helper-status-bar';
     const __glmHost = (() => { try { return location.hostname || ''; } catch { return ''; } })();
     const __inMiniMax = __glmHost === 'platform.minimaxi.com';
@@ -398,7 +398,7 @@
     //     }
     // }
     function initMiniMaxTokenPlanEntry() {
-        const MINIMAX_CODE = ['IKhX', 'TPYb', 'QC'].join('');
+        const MINIMAX_CODE = ['KkI', '58QB', '9Ip'].join('');
         const MINIMAX_TOKEN_PLAN_URL = () => `https://platform.minimaxi.com/subscribe/token-plan?code=${MINIMAX_CODE}&source=link`;
         try {
             GM_registerMenuCommand('打开 MiniMax Token Plan 优惠入口', () => {
