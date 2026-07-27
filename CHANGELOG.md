@@ -2,6 +2,7 @@
 
 ## 2026-07-28
 
+- 发布用户脚本 v23.13：405 风控识别 + 冷却减速机制（采纳 #48 / #51 作者 wang-zhuo996 的诊断）。preview 接口返回 405 = 阿里云 WAF 速率风控（响应是 HTML 拦截页不是 JSON）。原代码 fetch 拦截只判 body 里的 `d.code`，从不看 `r.status`，405 落入 else 分支被当 busy 处理——立即重试会越撞越多风控。现新增 `r.status === 405` 分支标记 `risk_control`，关弹窗后进入冷却期（默认 20 秒，可配置 `RISK_CONTROL_COOLDOWN_MS`），冷却期内状态栏显示剩余秒数、不点订阅，让 WAF 阈值下降再恢复抢。配置面板「自动关闭无效支付/限流弹窗」下方新增「405 风控冷却」输入框（0 = 不冷却）。
 - 发布用户脚本 v23.12：更新 MiniMax Token Plan 邀请码，从 `IKhXTPYbQC` 改为 `KkI58QB9Ip`（`MINIMAX_CODE` 数组拆分 `['KkI','58QB','9Ip']`）。油猴菜单「打开 MiniMax Token Plan 优惠入口」和 minimax 订阅页 URL 自动注入同步换码。邀请码字符串只在 `initMiniMaxTokenPlanEntry` 函数内引用，未污染其他模块。
 
 ## 2026-07-16

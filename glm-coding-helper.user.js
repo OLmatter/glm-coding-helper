@@ -1,7 +1,7 @@
 ﻿// ==UserScript==
 // @name         智谱 GLM Coding Plan 抢购助手 + 本地 OCR 自动验证码
 // @namespace    http://tampermonkey.net/
-// @version      23.12
+// @version      23.13
 // @description  GLM Coding Rush / 智谱 GLM Coding Plan 抢购助手，一键抢购油猴脚本 / Tampermonkey userscript，配合本地 CPU/GPU OCR（PP-OCRv6）自动识别中文点选验证码并点击，支持多窗口并发、限流重试和支付页安全保护。订阅入口被风控拦截时手动点「特惠订阅」即可，验证码自动打。
 // @author       mumumi
 // @include      https://*bigmodel.cn/glm-coding*
@@ -34,7 +34,7 @@
 // ==/UserScript==
 (function () {
     'use strict';
-    const SCRIPT_VERSION = '23.12';
+    const SCRIPT_VERSION = '23.13';
     const BOOT_BAR_ID = 'glm-helper-status-bar';
     const __glmHost = (() => { try { return location.hostname || ''; } catch { return ''; } })();
     const __inMiniMax = __glmHost === 'platform.minimaxi.com';
@@ -501,6 +501,15 @@
                 try { d = _oP(txt); } catch { d = {}; }
                 console.log('[GLM v8.0 DEBUG] preview响应:', d);
                 console.log('[GLM v8.0 DEBUG] soldOut值:', d?.data?.soldOut, '类型:', typeof d?.data?.soldOut);
+                if (r.status === 405) {
+                    // 405 是阿里云 WAF 速率风控（响应是 HTML 拦截页，不是 JSON）。
+                    // 单独标识 risk_control，配合冷却机制减速，避免立即重试越撞越多。
+                    console.log('[GLM] preview 405 风控拦截（阿里云 WAF），标记 risk_control');
+                    PS.result = 'risk_control';
+                    PS.rawCode = 405;
+                    PS.inProgress = false;
+                    return new Response(txt, { status: r.status, headers: { 'Content-Type': 'application/json' } });
+                }
                 if (d?.code === 200 && d?.data?.bizId) {
                     PS.result    = 'success';
                     PS.bizId     = d.data.bizId;
@@ -635,6 +644,9 @@
         HOTKEY_PAUSE: 'F8',
         HOTKEY_PAUSE_ALL: 'Shift+F8',
         HOTKEY_AUTO_CLICK_SUB: 'F9',
+        // 405 风控冷却（毫秒）。preview 接口返回 405 = 阿里云 WAF 速率风控，
+        // 立即重试会越撞越多，关弹窗后进入冷却，让 WAF 阈值下降再恢复抢。
+        RISK_CONTROL_COOLDOWN_MS: 20000,
     };
     function loadCfg() { try { const s = GM_getValue(STORAGE_KEY, null); return s ? { ...DEF, ...JSON.parse(s) } : { ...DEF }; } catch { return { ...DEF }; } }
     function saveCfg(c) { GM_setValue(STORAGE_KEY, JSON.stringify(c)); }
@@ -917,6 +929,7 @@
     let taskTarget = null, taskPhase = 'IDLE', taskClickTime = 0, taskRLCount = 0;
     let taskClickCaptchaSeq = 0;  // 本次点击时记录的验证码计数器基线；WAITING 里比对是否增长判断验证码是否弹出
     let lastCloseReason = '';
+    let riskCooldownUntil = 0; // 405 风控冷却结束时间戳；冷却期内不点订阅
     const MAX_RL = 3, MODAL_WAIT = 15000, EMPTY_SWEEP_CONFIRM = 3, SOLD_OUT_CONFIRM = 2;
     // ── 工具函数 ──────────────────────────────────────────────────────────────
     function parseRestock(text) {
@@ -1051,6 +1064,8 @@
         if (PS.inProgress) return 'keep';
         // ── 情况 A：接口 555 系统繁忙 → 关弹窗试下一个
         if (PS.result === 'busy') return 'close';
+        // ── 情况 A2：接口 405 风控 → 关弹窗进入冷却（冷却在 tick 里处理）
+        if (PS.result === 'risk_control') return 'close';
         // ── 情况 B：接口返回 200+soldOut → 关弹窗试下一个（但前端可能因 JSON.parse 劫持而正常显示了价格）
         if (PS.result === 'sold_out') {
             if (Date.now() - taskClickTime >= 1500) {
@@ -1199,6 +1214,12 @@
                     <span style="font-size:14px;color:#555">自动关闭无效支付/限流弹窗（默认关闭）</span>
                     <span title="默认关闭，需手动开启才会自动关闭。&#10;开启后自动关闭以下弹窗并重试：&#10;1. 接口返回售罄但前端弹出的支付弹窗（二维码支付链接缺参数，扫码也无法付款）&#10;2. 限流弹窗（自动关闭后继续重试）&#10;关闭后遇到异常弹窗会停脚本，需手动处理" style="margin-left:6px;cursor:help;color:#999;font-size:14px;border:1px solid #ccc;border-radius:50%;width:18px;height:18px;display:inline-flex;align-items:center;justify-content:center;line-height:1">?</span>
                 </label>
+                <div style="padding-left:26px;display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+                    <span style="font-size:13px;color:#888">405 风控冷却</span>
+                    <input type="number" id="glm-rccd" value="${CFG.RISK_CONTROL_COOLDOWN_MS}" min="0" max="120000" step="1000" style="width:80px;padding:5px 8px;border:1px solid #d9d9d9;border-radius:4px;font-size:13px;text-align:center">
+                    <span style="font-size:13px;color:#888">ms</span>
+                    <span title="preview 接口返回 405 = 阿里云 WAF 速率风控。立即重试会越撞越多，关弹窗后进入冷却，让 WAF 阈值下降再恢复抢。默认 20000ms（20秒），可以按情况调大调小，设 0 表示不冷却。" style="cursor:help;color:#999;font-size:14px;border:1px solid #ccc;border-radius:50%;width:18px;height:18px;display:inline-flex;align-items:center;justify-content:center;line-height:1">?</span>
+                </div>
                 <label style="display:flex;align-items:center;cursor:pointer">
                     <input type="checkbox" id="glm-acs" ${CFG.AUTO_CLICK_SUB ? 'checked' : ''} style="margin-right:8px">
                     <span style="font-size:14px;color:#555">自动点击订阅（默认关闭）</span>
@@ -1306,6 +1327,7 @@
                 SMART_REFRESH     : panel.querySelector('#glm-sm').checked,
                 CHECK_INTERVAL    : CFG.CHECK_INTERVAL,
                 AUTO_CLOSE_INVALID: panel.querySelector('#glm-aci').checked,
+                RISK_CONTROL_COOLDOWN_MS: parseInt(panel.querySelector('#glm-rccd').value, 10),
                 AUTO_CLICK_SUB    : panel.querySelector('#glm-acs').checked,
                 AUTO_CAPTCHA_CLICK: panel.querySelector('#glm-acc').checked,
                 AUTO_CAPTCHA_CONFIRM: panel.querySelector('#glm-acf').checked,
@@ -1338,6 +1360,15 @@
         if (runtimePaused) {
             setBar(`⏸️ 脚本已暂停。${pauseHotkey()} 恢复。`, '#722ed1');
             return;
+        }
+        // 405 风控冷却期内不点订阅，避免立即重试越撞越多
+        if (riskCooldownUntil && Date.now() < riskCooldownUntil) {
+            const remain = Math.ceil((riskCooldownUntil - Date.now()) / 1000);
+            setBar(`🛑 风控冷却中（剩 ${remain}s），节奏慢下来避免越撞越多`, '#cf1322');
+            return;
+        }
+        if (riskCooldownUntil && Date.now() >= riskCooldownUntil) {
+            riskCooldownUntil = 0; // 冷却结束，清掉
         }
         if (window.__glmRushConfirmed && window.__glmRushDialogSeen && !getPayDialog()) {
             window.__glmRushConfirmed = 0;
@@ -1495,7 +1526,13 @@
                     }
                     const reason = PS.result === 'busy'
                         ? `✈️ 系统繁忙(${PS.rawCode || 555})，关闭弹窗`
-                        : `📉 ${TABS_MAP[taskTarget.tab]}·${PKGS_MAP[taskTarget.pkg]} 售罄`;
+                        : PS.result === 'risk_control'
+                            ? `🛑 风控拦截(405)，关闭弹窗并冷却`
+                            : `📉 ${TABS_MAP[taskTarget.tab]}·${PKGS_MAP[taskTarget.pkg]} 售罄`;
+                    // 405 风控时设冷却，避免立即重试越撞越多
+                    if (PS.result === 'risk_control') {
+                        riskCooldownUntil = Date.now() + (CFG.RISK_CONTROL_COOLDOWN_MS || 20000);
+                    }
                     closePayDialog();
                     lastCloseReason = reason;
                     const nextIdx = qIdx + 1;
