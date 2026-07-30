@@ -1,7 +1,7 @@
 ﻿// ==UserScript==
 // @name         智谱 GLM Coding Plan 抢购助手 + 本地 OCR 自动验证码
 // @namespace    http://tampermonkey.net/
-// @version      23.14
+// @version      23.15
 // @description  GLM Coding Rush / 智谱 GLM Coding Plan 抢购助手，一键抢购油猴脚本 / Tampermonkey userscript，配合本地 CPU/GPU OCR（PP-OCRv6）自动识别中文点选验证码并点击，支持多窗口并发、限流重试和支付页安全保护。订阅入口被风控拦截时手动点「特惠订阅」即可，验证码自动打。
 // @author       mumumi
 // @include      https://*bigmodel.cn/glm-coding*
@@ -34,7 +34,7 @@
 // ==/UserScript==
 (function () {
     'use strict';
-    const SCRIPT_VERSION = '23.14';
+    const SCRIPT_VERSION = '23.15';
     const BOOT_BAR_ID = 'glm-helper-status-bar';
     const __glmHost = (() => { try { return location.hostname || ''; } catch { return ''; } })();
     const __inMiniMax = __glmHost === 'platform.minimaxi.com';
@@ -1365,7 +1365,7 @@
         // 405 风控冷却期内不点订阅，避免立即重试越撞越多
         if (riskCooldownUntil && Date.now() < riskCooldownUntil) {
             const remain = Math.ceil((riskCooldownUntil - Date.now()) / 1000);
-            setBar(`🛑 风控冷却中（剩 ${remain}s），节奏慢下来避免越撞越多`, '#cf1322');
+            setBar(`🛑 风控冷却中（剩 ${remain}s），可在配置面板「405 风控冷却」调整`, '#cf1322');
             return;
         }
         if (riskCooldownUntil && Date.now() >= riskCooldownUntil) {
