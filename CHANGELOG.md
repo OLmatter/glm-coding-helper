@@ -1,5 +1,9 @@
 # 修复历史
 
+## 2026-07-29
+
+- 发布用户脚本 v23.14：修复 v23.13 405 风控冷却优先级 bug。v23.13 在小飞机弹窗（`hasAirplaneInDialog`）警告前会拦截所有 fallback，导致 405 风控时状态栏继续显示"小飞机警告"而不是"风控冷却中（剩 Xs）"，用户看不到冷却提示以为脚本卡死。修：①`checkPayDialog` 情况 D 守卫 `PS.result !== 'risk_control'`，让 405 走关闭 + 冷却路径。②WAITING 阶段（isAirplanePayDialog 路径）小飞机警告加 risk_control 守卫。③WAITING 阶段关弹窗分支（1495 那段）补 risk_control 时设 `riskCooldownUntil`（之前只有 1530 路径有）。④reason 三元加 risk_control 分支显示"🛑 风控拦截(405)，关闭弹窗并冷却"。
+
 ## 2026-07-28
 
 - 发布用户脚本 v23.13：405 风控识别 + 冷却减速机制（采纳 #48 / #51 作者 wang-zhuo996 的诊断）。preview 接口返回 405 = 阿里云 WAF 速率风控（响应是 HTML 拦截页不是 JSON）。原代码 fetch 拦截只判 body 里的 `d.code`，从不看 `r.status`，405 落入 else 分支被当 busy 处理——立即重试会越撞越多风控。现新增 `r.status === 405` 分支标记 `risk_control`，关弹窗后进入冷却期（默认 20 秒，可配置 `RISK_CONTROL_COOLDOWN_MS`），冷却期内状态栏显示剩余秒数、不点订阅，让 WAF 阈值下降再恢复抢。配置面板「自动关闭无效支付/限流弹窗」下方新增「405 风控冷却」输入框（0 = 不冷却）。

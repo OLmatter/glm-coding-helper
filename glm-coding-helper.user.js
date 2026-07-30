@@ -1,7 +1,7 @@
 ﻿// ==UserScript==
 // @name         智谱 GLM Coding Plan 抢购助手 + 本地 OCR 自动验证码
 // @namespace    http://tampermonkey.net/
-// @version      23.13
+// @version      23.14
 // @description  GLM Coding Rush / 智谱 GLM Coding Plan 抢购助手，一键抢购油猴脚本 / Tampermonkey userscript，配合本地 CPU/GPU OCR（PP-OCRv6）自动识别中文点选验证码并点击，支持多窗口并发、限流重试和支付页安全保护。订阅入口被风控拦截时手动点「特惠订阅」即可，验证码自动打。
 // @author       mumumi
 // @include      https://*bigmodel.cn/glm-coding*
@@ -34,7 +34,7 @@
 // ==/UserScript==
 (function () {
     'use strict';
-    const SCRIPT_VERSION = '23.13';
+    const SCRIPT_VERSION = '23.14';
     const BOOT_BAR_ID = 'glm-helper-status-bar';
     const __glmHost = (() => { try { return location.hostname || ''; } catch { return ''; } })();
     const __inMiniMax = __glmHost === 'platform.minimaxi.com';
@@ -1078,7 +1078,8 @@
             return 'close';
         }
         // ── 情况 D：接口没说售罄/繁忙，但弹窗里出现小飞机 → 异常不一致
-        if (hasAirplaneInDialog()) return 'warn';
+        // 注意：405 风控时小飞机也可能出现，但不要在这里 return warn 抢走 risk_control 的冷却路径
+        if (hasAirplaneInDialog() && PS.result !== 'risk_control') return 'warn';
         // ── 情况 C：接口成功/其它 → 看弹窗实际有没有金额
         const prices = readDialogPrices();
         if (prices?.any) {
@@ -1475,7 +1476,7 @@
             const rlw = findRLModal();
             if (rlw) {
                 if (isAirplanePayDialog(rlw)) {
-                    if (PS.result !== 'busy' && PS.result !== 'sold_out') {
+                    if (PS.result !== 'busy' && PS.result !== 'sold_out' && PS.result !== 'risk_control') {
                         setBar('⚠️ API返回200但弹窗显示小飞机（"购买人数较多"），可能是前后端不一致。不自动关闭，请手动确认后关闭弹窗，脚本会继续。', '#ff4d4f');
                         return;
                     }
@@ -1486,6 +1487,10 @@
                     }
                     closeModal(rlw);
                     const curName = `${TABS_MAP[tab]}·${PKGS_MAP[pkg]}`;
+                    // 405 风控时设冷却，避免立即重试越撞越多
+                    if (PS.result === 'risk_control') {
+                        riskCooldownUntil = Date.now() + (CFG.RISK_CONTROL_COOLDOWN_MS || 20000);
+                    }
                     const nextIdx = qIdx + 1;
                     const isLoop = nextIdx >= scanQueue.length;
                     qIdx = isLoop ? 0 : nextIdx;
@@ -1493,7 +1498,9 @@
                     state = 'SCANNING';
                     const reason = PS.result === 'busy'
                         ? `✈️ 系统繁忙(${PS.rawCode || 555})，关闭弹窗`
-                        : `📉 ${curName} 售罄`;
+                        : PS.result === 'risk_control'
+                            ? `🛑 风控拦截(405)，关闭弹窗并冷却`
+                            : `📉 ${curName} 售罄`;
                     lastCloseReason = reason;
                     setBar(`${reason}，${isLoop ? '🔄 轮询一圈，从头重试...' : '试下一个...'}`, '#d46b08');
                     return;
