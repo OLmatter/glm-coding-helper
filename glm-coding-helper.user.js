@@ -1,7 +1,7 @@
 ﻿// ==UserScript==
 // @name         智谱 GLM Coding Plan 抢购助手 + 本地 OCR 自动验证码
 // @namespace    http://tampermonkey.net/
-// @version      23.15
+// @version      23.16
 // @description  GLM Coding Rush / 智谱 GLM Coding Plan 抢购助手，一键抢购油猴脚本 / Tampermonkey userscript，配合本地 CPU/GPU OCR（PP-OCRv6）自动识别中文点选验证码并点击，支持多窗口并发、限流重试和支付页安全保护。订阅入口被风控拦截时手动点「特惠订阅」即可，验证码自动打。
 // @author       mumumi
 // @include      https://*bigmodel.cn/glm-coding*
@@ -34,7 +34,7 @@
 // ==/UserScript==
 (function () {
     'use strict';
-    const SCRIPT_VERSION = '23.15';
+    const SCRIPT_VERSION = '23.16';
     const BOOT_BAR_ID = 'glm-helper-status-bar';
     const __glmHost = (() => { try { return location.hostname || ''; } catch { return ''; } })();
     const __inMiniMax = __glmHost === 'platform.minimaxi.com';
@@ -1482,7 +1482,7 @@
                     }
                     if (!CFG.AUTO_CLOSE_INVALID) {
                         state = 'DONE';
-                        setBar('Auto-close is disabled. Please check this payment/rate-limit popup manually.', '#d46b08');
+                        setBar('⚠️ 自动关闭无效弹窗未开启，请手动确认后关闭此支付/限流弹窗', '#d46b08');
                         return;
                     }
                     closeModal(rlw);
