@@ -1,7 +1,7 @@
 ﻿// ==UserScript==
 // @name         智谱 GLM Coding Plan 抢购助手 + 本地 OCR 自动验证码
 // @namespace    http://tampermonkey.net/
-// @version      23.16
+// @version      23.17
 // @description  GLM Coding Rush / 智谱 GLM Coding Plan 抢购助手，一键抢购油猴脚本 / Tampermonkey userscript，配合本地 CPU/GPU OCR（PP-OCRv6）自动识别中文点选验证码并点击，支持多窗口并发、限流重试和支付页安全保护。订阅入口被风控拦截时手动点「特惠订阅」即可，验证码自动打。
 // @author       mumumi
 // @include      https://*bigmodel.cn/glm-coding*
@@ -34,7 +34,7 @@
 // ==/UserScript==
 (function () {
     'use strict';
-    const SCRIPT_VERSION = '23.16';
+    const SCRIPT_VERSION = '23.17';
     const BOOT_BAR_ID = 'glm-helper-status-bar';
     const __glmHost = (() => { try { return location.hostname || ''; } catch { return ''; } })();
     const __inMiniMax = __glmHost === 'platform.minimaxi.com';
@@ -646,6 +646,7 @@
         HOTKEY_AUTO_CLICK_SUB: 'F9',
         // 405 风控冷却（毫秒）。preview 接口返回 405 = 阿里云 WAF 速率风控，
         // 立即重试会越撞越多，关弹窗后进入冷却，让 WAF 阈值下降再恢复抢。
+        // 0 = 不冷却（关闭整个 405 减速机制）。默认 20000ms（20秒）。
         RISK_CONTROL_COOLDOWN_MS: 20000,
     };
     function loadCfg() { try { const s = GM_getValue(STORAGE_KEY, null); return s ? { ...DEF, ...JSON.parse(s) } : { ...DEF }; } catch { return { ...DEF }; } }
@@ -1487,9 +1488,10 @@
                     }
                     closeModal(rlw);
                     const curName = `${TABS_MAP[tab]}·${PKGS_MAP[pkg]}`;
-                    // 405 风控时设冷却，避免立即重试越撞越多
+                    // 405 风控时设冷却。0 = 不冷却（直接重试）；非 0 = 冷却对应毫秒。
                     if (PS.result === 'risk_control') {
-                        riskCooldownUntil = Date.now() + (CFG.RISK_CONTROL_COOLDOWN_MS || 20000);
+                        const cd = CFG.RISK_CONTROL_COOLDOWN_MS;
+                        if (cd > 0) riskCooldownUntil = Date.now() + cd;
                     }
                     const nextIdx = qIdx + 1;
                     const isLoop = nextIdx >= scanQueue.length;
@@ -1536,9 +1538,10 @@
                         : PS.result === 'risk_control'
                             ? `🛑 风控拦截(405)，关闭弹窗并冷却`
                             : `📉 ${TABS_MAP[taskTarget.tab]}·${PKGS_MAP[taskTarget.pkg]} 售罄`;
-                    // 405 风控时设冷却，避免立即重试越撞越多
+                    // 405 风控时设冷却。0 = 不冷却（直接重试）；非 0 = 冷却对应毫秒。
                     if (PS.result === 'risk_control') {
-                        riskCooldownUntil = Date.now() + (CFG.RISK_CONTROL_COOLDOWN_MS || 20000);
+                        const cd = CFG.RISK_CONTROL_COOLDOWN_MS;
+                        if (cd > 0) riskCooldownUntil = Date.now() + cd;
                     }
                     closePayDialog();
                     lastCloseReason = reason;

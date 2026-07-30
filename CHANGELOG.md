@@ -2,6 +2,7 @@
 
 ## 2026-07-29
 
+- 发布用户脚本 v23.17：fix 405 冷却"0 = 不冷却"配置项失效 bug。原代码 `(CFG.RISK_CONTROL_COOLDOWN_MS || 20000)` 用了 `||` 守卫，0 会被当 falsy 走 fallback 20000。等同于用户设 0 想关闭冷却，结果还是冷却 20 秒。改成 `if (cd > 0) riskCooldownUntil = Date.now() + cd;`，0 真的不冷却、不设置 cooldownUntil、脚本立即重试。
 - 发布用户脚本 v23.16：状态栏提示中文化。`isAirplanePayDialog` 路径下 `AUTO_CLOSE_INVALID` 未开启时的英文提示改为「⚠️ 自动关闭无效弹窗未开启，请手动确认后关闭此支付/限流弹窗」。
 - 发布用户脚本 v23.15：风控冷却状态栏提示加可配置入口。状态栏显示「🛑 风控冷却中（剩 Xs），可在配置面板「405 风控冷却」调整」，告诉用户冷却时间在哪改。
 - 发布用户脚本 v23.14：修复 v23.13 405 风控冷却优先级 bug。v23.13 在小飞机弹窗（`hasAirplaneInDialog`）警告前会拦截所有 fallback，导致 405 风控时状态栏继续显示"小飞机警告"而不是"风控冷却中（剩 Xs）"，用户看不到冷却提示以为脚本卡死。修：①`checkPayDialog` 情况 D 守卫 `PS.result !== 'risk_control'`，让 405 走关闭 + 冷却路径。②WAITING 阶段（isAirplanePayDialog 路径）小飞机警告加 risk_control 守卫。③WAITING 阶段关弹窗分支（1495 那段）补 risk_control 时设 `riskCooldownUntil`（之前只有 1530 路径有）。④reason 三元加 risk_control 分支显示"🛑 风控拦截(405)，关闭弹窗并冷却"。
